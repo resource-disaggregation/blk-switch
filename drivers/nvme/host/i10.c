@@ -22,6 +22,8 @@
 #include <net/tcp.h>
 #include <linux/blk-mq.h>
 #include <crypto/hash.h>
+#include <net/busy_poll.h>
+
 #include <linux/bio.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
@@ -548,8 +550,8 @@ static int i10_host_handle_c2h_data(struct i10_host_queue *queue,
 		unlikely(!(pdu->hdr.flags & NVME_TCP_F_DATA_LAST))) {
 			dev_err(queue->ctrl->ctrl.device,
 				"queue %d tag %#x SUCCESS set but not last PDU\n",
-				nvme_tcp_queue_id(queue), rq->tag);
-			nvme_tcp_error_recovery(&queue->ctrl->ctrl);
+				i10_host_queue_id(queue), rq->tag);
+			i10_host_error_recovery(&queue->ctrl->ctrl);
 			return -EPROTO;
 	}
 
@@ -816,7 +818,7 @@ static int i10_host_recv_ddgst(struct i10_host_queue *queue,
 	}
 
 	if (pdu->hdr.flags & NVME_TCP_F_DATA_SUCCESS) {
-		struct request *rq = blk_mq_tag_to_rq(nvme_tcp_tagset(queue),
+		struct request *rq = blk_mq_tag_to_rq(i10_host_tagset(queue),
 						pdu->command_id);
 
 		i10_host_end_request(rq, NVME_SC_SUCCESS);
@@ -1208,7 +1210,7 @@ done:
 
 static int i10_host_try_recv(struct i10_host_queue *queue)
 {
-	struct sock *sk = queue->sock->sk;
+	struct socket *sock = queue->sock;
 	struct sock *sk = sock->sk;
 	read_descriptor_t rd_desc;
 	int consumed;
@@ -1674,7 +1676,7 @@ static int i10_host_start_queue(struct nvme_ctrl *nctrl, int idx)
 	int ret;
 
 	if (idx)
-		ret = nvmf_connect_io_queue(nctrl, idx);
+		ret = nvmf_connect_io_queue(nctrl, idx, false);
 	else
 		ret = nvmf_connect_admin_queue(nctrl);
 
@@ -1825,7 +1827,7 @@ static unsigned int i10_host_nr_io_queues(struct nvme_ctrl *ctrl)
 static void i10_host_set_io_queues(struct nvme_ctrl *nctrl,
 		unsigned int nr_io_queues)
 {
-	struct i10_host_ctrl *ctrl = to_tcp_ctrl(nctrl);
+	struct i10_host_ctrl *ctrl = to_i10_host_ctrl(nctrl);
 	struct nvmf_ctrl_options *opts = nctrl->opts;
 
 	if (opts->nr_write_queues && opts->nr_io_queues < nr_io_queues) {
@@ -2154,8 +2156,8 @@ static void i10_host_error_recovery_work(struct work_struct *work)
 
 static void i10_host_teardown_ctrl(struct nvme_ctrl *ctrl, bool shutdown)
 {
-	cancel_work_sync(&to_tcp_ctrl(ctrl)->err_work);
-	cancel_delayed_work_sync(&to_tcp_ctrl(ctrl)->connect_work);
+	cancel_work_sync(&to_i10_host_ctrl(ctrl)->err_work);
+	cancel_delayed_work_sync(&to_i10_host_ctrl(ctrl)->connect_work);
 
 	i10_host_teardown_io_queues(ctrl, shutdown);
 	blk_mq_quiesce_queue(ctrl->admin_q);
@@ -2298,7 +2300,7 @@ i10_host_timeout(struct request *rq, bool reserved)
 		 */
 		flush_work(&ctrl->err_work);
 		i10_host_teardown_io_queues(&ctrl->ctrl, false);
-		i10_host_teardown_admin_queues(&ctrl->ctrl, false);
+		i10_host_teardown_admin_queue(&ctrl->ctrl, false);
 		return BLK_EH_DONE;
 	}
 
@@ -2371,7 +2373,7 @@ static blk_status_t i10_host_setup_cmd_pdu(struct nvme_ns *ns,
 
 	ret = i10_host_map_data(queue, rq);
 	if (unlikely(ret)) {
-		nvme_cleanup_cmd(rq)
+		nvme_cleanup_cmd(rq);
 		dev_err(queue->ctrl->ctrl.device,
 			"Failed to map data (%d)\n", ret);
 		return ret;
