@@ -15,8 +15,25 @@
 #include <crypto/hash.h>
 #include <net/busy_poll.h>
 
+#include <linux/bio.h>
+#include <linux/hrtimer.h>
+#include <linux/ktime.h>
+
 #include "nvme.h"
 #include "fabrics.h"
+
+// jaehyun
+#define I10_CARAVAN_CAPACITY		65536
+#define I10_AGGREGATION_SIZE		32
+#define I10_MIN_DOORBELL_TIMEOUT	25
+
+static int i10_aggregation_size __read_mostly = 16;
+module_param(i10_aggregation_size, int, 0644);
+MODULE_PARM_DESC(i10_aggregation_size, "i10 aggregation size");
+
+static int i10_delayed_doorbell_us __read_mostly = 50;
+module_param(i10_delayed_doorbell_us, int, 0644);
+MODULE_PARM_DESC(i10_delayed_doorbell_us, "i10 delayed doorbell timer (us)");
 
 struct nvme_tcp_queue;
 
@@ -45,6 +62,8 @@ struct nvme_tcp_request {
 	size_t			offset;
 	size_t			data_sent;
 	enum nvme_tcp_send_state state;
+
+	int			nice;
 };
 
 enum nvme_tcp_queue_flags {
@@ -63,6 +82,16 @@ struct nvme_tcp_queue {
 	struct socket		*sock;
 	struct work_struct	io_work;
 	int			io_cpu;
+
+	// jaehyun
+        struct work_struct      io_work_lat;
+        int                     nice;
+        unsigned short          type;
+
+        unsigned long           in_flight_bytes;
+        unsigned long           stats_lat_bytes[24];
+        unsigned long           stats_thru_bytes[24];
+        unsigned long           reset_stats;
 
 	spinlock_t		lock;
 	struct list_head	send_list;
@@ -90,6 +119,20 @@ struct nvme_tcp_queue {
 	struct ahash_request	*snd_hash;
 	__le32			exp_ddgst;
 	__le32			recv_ddgst;
+
+	/* jaehyun: For i10 caravans */
+	struct kvec		*caravan_iovs;
+	size_t			caravan_len;
+	int			nr_iovs;
+	bool			send_now;
+
+	struct page		**caravan_mapped;
+	int			nr_mapped;
+
+	/* jaehyun: For i10 delayed doorbells */
+	int			nr_req;
+	bool			doorbell_expire;
+	struct hrtimer		doorbell_timer;
 
 	struct page_frag_cache	pf_cache;
 
@@ -119,6 +162,7 @@ struct nvme_tcp_ctrl {
 static LIST_HEAD(nvme_tcp_ctrl_list);
 static DEFINE_MUTEX(nvme_tcp_ctrl_mutex);
 static struct workqueue_struct *nvme_tcp_wq;
+static struct workqueue_struct *nvme_tcp_wq_lat;
 static struct blk_mq_ops nvme_tcp_mq_ops;
 static struct blk_mq_ops nvme_tcp_admin_mq_ops;
 
@@ -247,15 +291,70 @@ static inline void nvme_tcp_advance_req(struct nvme_tcp_request *req,
 	}
 }
 
+/* jaehyun */
+static inline bool i10_host_is_latency(struct nvme_tcp_queue *queue)
+{
+	return queue->nice < 0;
+}
+
+static inline bool i10_host_legacy_path(struct nvme_tcp_request *req)
+{
+	return (nvme_tcp_queue_id(req->queue) == 0) ||
+		(i10_delayed_doorbell_us < I10_MIN_DOORBELL_TIMEOUT) ||
+		(i10_aggregation_size == 0);
+}
+
+#define I10_ALLOWED_FLAGS (REQ_OP_READ | REQ_OP_WRITE | REQ_DRV | \
+		REQ_RAHEAD | REQ_SYNC | REQ_IDLE | REQ_NOMERGE)
+
+static bool i10_host_is_nodelay_path(struct nvme_tcp_request *req)
+{
+	return (req->curr_bio == NULL) ||
+		(req->curr_bio->bi_opf & ~I10_ALLOWED_FLAGS) ||
+		i10_host_is_latency(req->queue);
+}
+
+// jaehyun
 static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 {
 	struct nvme_tcp_queue *queue = req->queue;
+
+	queue->nice = task_nice(current);
 
 	spin_lock(&queue->lock);
 	list_add_tail(&req->entry, &queue->send_list);
 	spin_unlock(&queue->lock);
 
-	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+	//printk(KERN_DEBUG "(pid %d cpu %d): queue id %d io_cpu %d tag %d", current->pid, current->cpu, nvme_tcp_queue_id(queue), queue->io_cpu, blk_mq_rq_from_pdu(req)->tag);
+
+	if (!i10_host_legacy_path(req) && !i10_host_is_nodelay_path(req)) {
+		queue->nr_req++;
+
+		if (queue->doorbell_expire) {
+			hrtimer_start(&queue->doorbell_timer,
+				ns_to_ktime(i10_delayed_doorbell_us * NSEC_PER_USEC),
+				HRTIMER_MODE_REL);
+			queue->doorbell_expire = false;
+		}
+		else if (queue->nr_req >= i10_aggregation_size) {
+			hrtimer_cancel(&queue->doorbell_timer);
+			queue->doorbell_expire = true;
+			queue->nr_req = 0;
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+		}
+	}
+	else {
+		if (!queue->doorbell_expire) {
+			hrtimer_cancel(&queue->doorbell_timer);
+			queue->doorbell_expire = true;
+			queue->nr_req = 0;
+		}
+
+		if (i10_host_is_latency(queue))
+			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
+		else
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+	}
 }
 
 static inline struct nvme_tcp_request *
@@ -384,6 +483,7 @@ static int nvme_tcp_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	struct nvme_tcp_ctrl *ctrl = data;
 	struct nvme_tcp_queue *queue = &ctrl->queues[hctx_idx + 1];
 
+	hctx->blk_switch = true;
 	hctx->driver_data = queue;
 	return 0;
 }
@@ -786,8 +886,13 @@ static void nvme_tcp_data_ready(struct sock *sk)
 
 	read_lock(&sk->sk_callback_lock);
 	queue = sk->sk_user_data;
-	if (likely(queue && queue->rd_enabled))
-		queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+	if (likely(queue && queue->rd_enabled)) {
+		// jaehyun
+		if (i10_host_is_latency(queue))
+			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
+		else
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+	}
 	read_unlock(&sk->sk_callback_lock);
 }
 
@@ -799,7 +904,11 @@ static void nvme_tcp_write_space(struct sock *sk)
 	queue = sk->sk_user_data;
 	if (likely(queue && sk_stream_is_writeable(sk))) {
 		clear_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
-		queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+		// jaehyun
+		if (i10_host_is_latency(queue))
+			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
+		else
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 	}
 	read_unlock_bh(&sk->sk_callback_lock);
 }
@@ -843,6 +952,14 @@ static void nvme_tcp_fail_request(struct nvme_tcp_request *req)
 	nvme_tcp_end_request(blk_mq_rq_from_pdu(req), NVME_SC_HOST_PATH_ERROR);
 }
 
+/* jaehyun */
+static inline bool i10_host_is_caravan_full(struct nvme_tcp_queue *queue, int len)
+{
+	return (queue->caravan_len + len >= I10_CARAVAN_CAPACITY) ||
+		(queue->nr_iovs >= I10_AGGREGATION_SIZE * 2) ||
+		(queue->nr_mapped >= I10_AGGREGATION_SIZE);
+}
+
 static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 {
 	struct nvme_tcp_queue *queue = req->queue;
@@ -859,14 +976,31 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 		else
 			flags |= MSG_MORE;
 
-		/* can't zcopy slab pages */
-		if (unlikely(PageSlab(page))) {
-			ret = sock_no_sendpage(queue->sock, page, offset, len,
-					flags);
-		} else {
-			ret = kernel_sendpage(queue->sock, page, offset, len,
-					flags);
+		/* jaehyun */
+		if (i10_host_legacy_path(req)) {
+			/* can't zcopy slab pages */
+			if (unlikely(PageSlab(page))) {
+				ret = sock_no_sendpage(queue->sock, page, offset, len,
+						flags);
+			} else {
+				ret = kernel_sendpage(queue->sock, page, offset, len,
+						flags);
+			}
 		}
+		else {
+			if (i10_host_is_caravan_full(queue, len)) {
+				queue->send_now = true;
+				return 1;
+			}
+			/* Caravans: I/O data aggregation */
+			queue->caravan_iovs[queue->nr_iovs].iov_base =
+				kmap(page) + offset;
+			queue->caravan_iovs[queue->nr_iovs++].iov_len = len;
+			queue->caravan_mapped[queue->nr_mapped++] = page;
+			queue->caravan_len += len;
+			ret = len;
+		}
+
 		if (ret <= 0)
 			return ret;
 
@@ -904,8 +1038,26 @@ static int nvme_tcp_try_send_cmd_pdu(struct nvme_tcp_request *req)
 	if (queue->hdr_digest && !req->offset)
 		nvme_tcp_hdgst(queue->snd_hash, pdu, sizeof(*pdu));
 
-	ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
+	/* jaehyun */
+	if (i10_host_legacy_path(req))
+		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,  flags);
+	else {
+		if (i10_host_is_caravan_full(queue, len)) {
+			queue->send_now = true;
+			return 1;
+		}
+		/* Caravans: command PDU aggregation */
+		queue->caravan_iovs[queue->nr_iovs].iov_base = pdu
+			+ req->offset;
+		queue->caravan_iovs[queue->nr_iovs++].iov_len = len;
+		queue->caravan_len += len;
+		ret = len;
+
+		if (i10_host_is_nodelay_path(req))
+			queue->send_now = true;
+	}
+
 	if (unlikely(ret <= 0))
 		return ret;
 
@@ -937,9 +1089,24 @@ static int nvme_tcp_try_send_data_pdu(struct nvme_tcp_request *req)
 	if (queue->hdr_digest && !req->offset)
 		nvme_tcp_hdgst(queue->snd_hash, pdu, sizeof(*pdu));
 
-	ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
+	/* jaehyun */
+	if (i10_host_legacy_path(req))
+		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,
 			MSG_DONTWAIT | MSG_MORE);
+	else {
+		if (i10_host_is_caravan_full(queue, len)) {
+			queue->send_now = true;
+			return 1;
+		}
+		/* Caravans: data PDU aggregation */
+		queue->caravan_iovs[queue->nr_iovs].iov_base = pdu
+			+ req->offset;
+		queue->caravan_iovs[queue->nr_iovs++].iov_len = len;
+		queue->caravan_len += len;
+		ret = len;
+	}
+
 	if (unlikely(ret <= 0))
 		return ret;
 
@@ -980,6 +1147,24 @@ static int nvme_tcp_try_send_ddgst(struct nvme_tcp_request *req)
 	return -EAGAIN;
 }
 
+/* jaehyun: to check if there's enough room in tcp_sndbuf */
+static inline int nvme_tcp_sndbuf_nospace(struct nvme_tcp_queue *queue,
+		int length)
+{
+	return sk_stream_wspace(queue->sock->sk) < length;
+}
+
+static bool i10_host_send_caravan(struct nvme_tcp_queue *queue)
+{
+	/* 1. Caravan becomes full (64KB), or
+	 * 2. No-delay request arrives, or
+	 * 3. No more request remains in i10 queue
+	 */
+	return queue->send_now ||
+		(queue->doorbell_expire &&
+		!queue->request && queue->caravan_len);
+}
+
 static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 {
 	struct nvme_tcp_request *req;
@@ -987,10 +1172,40 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 
 	if (!queue->request) {
 		queue->request = nvme_tcp_fetch_request(queue);
-		if (!queue->request)
+		if (!queue->request && !queue->caravan_len)
 			return 0;
 	}
-	req = queue->request;
+
+	/* jaehyun: pdu aggregation */
+	if (i10_host_send_caravan(queue)) {
+		struct msghdr msg = { .msg_flags = MSG_DONTWAIT | MSG_EOR };
+		int i, i10_ret = 0;
+
+		if (nvme_tcp_sndbuf_nospace(queue, queue->caravan_len)) {
+			set_bit(SOCK_NOSPACE, &queue->sock->sk->sk_socket->flags);
+			return 0;
+		}
+
+		i10_ret = kernel_sendmsg(queue->sock, &msg,
+				queue->caravan_iovs,
+				queue->nr_iovs,
+				queue->caravan_len);
+		if (i10_ret <= 0)
+			printk(KERN_DEBUG "jaehyun: why kernel_sendmsg fails??? i10_ret %d", i10_ret);
+
+		for (i = 0; i < queue->nr_mapped; i++)
+			kunmap(queue->caravan_mapped[i]);
+
+		queue->nr_iovs = 0;
+		queue->nr_mapped = 0;
+		queue->caravan_len = 0;
+		queue->send_now = false;
+	}
+
+	if (queue->request)
+		req = queue->request;
+	else
+		return 0;
 
 	if (req->state == NVME_TCP_SEND_CMD_PDU) {
 		ret = nvme_tcp_try_send_cmd_pdu(req);
@@ -1036,6 +1251,20 @@ static int nvme_tcp_try_recv(struct nvme_tcp_queue *queue)
 	return consumed;
 }
 
+/* jaehyun */
+enum hrtimer_restart i10_host_doorbell_timeout(struct hrtimer *timer)
+{
+	struct nvme_tcp_queue *queue =
+		container_of(timer, struct nvme_tcp_queue, doorbell_timer);
+
+	queue->doorbell_expire = true;
+	queue->nr_req = 0;
+
+	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+
+	return HRTIMER_NORESTART;
+}
+
 static void nvme_tcp_io_work(struct work_struct *w)
 {
 	struct nvme_tcp_queue *queue =
@@ -1073,6 +1302,46 @@ static void nvme_tcp_io_work(struct work_struct *w)
 	} while (!time_after(jiffies, deadline)); /* quota is exhausted */
 
 	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+}
+
+/* jaehyun */
+static void nvme_tcp_io_work_lat(struct work_struct *w)
+{
+	struct nvme_tcp_queue *queue =
+		container_of(w, struct nvme_tcp_queue, io_work_lat);
+	unsigned long deadline = jiffies + msecs_to_jiffies(1);
+
+	do {
+		bool pending = false;
+		int result;
+
+		result = nvme_tcp_try_send(queue);
+		if (result > 0) {
+			pending = true;
+		} else if (unlikely(result < 0)) {
+			dev_err(queue->ctrl->ctrl.device,
+				"failed to send request %d\n", result);
+
+			/*
+			 * Fail the request unless peer closed the connection,
+			 * in which case error recovery flow will complete all.
+			 */
+			if ((result != -EPIPE) && (result != -ECONNRESET))
+				nvme_tcp_fail_request(queue->request);
+			nvme_tcp_done_send_req(queue);
+			return;
+		}
+
+		result = nvme_tcp_try_recv(queue);
+		if (result > 0)
+			pending = true;
+
+		if (!pending)
+			return;
+
+	} while (!time_after(jiffies, deadline)); /* quota is exhausted */
+
+	queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
 }
 
 static void nvme_tcp_free_crypto(struct nvme_tcp_queue *queue)
@@ -1258,6 +1527,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	INIT_LIST_HEAD(&queue->send_list);
 	spin_lock_init(&queue->lock);
 	INIT_WORK(&queue->io_work, nvme_tcp_io_work);
+	INIT_WORK(&queue->io_work_lat, nvme_tcp_io_work_lat);
 	queue->queue_size = queue_size;
 
 	if (qid > 0)
@@ -1265,6 +1535,30 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	else
 		queue->cmnd_capsule_len = sizeof(struct nvme_command) +
 						NVME_TCP_ADMIN_CCSZ;
+
+	/* jaehyun: alloc for pdu aggregation */
+	queue->caravan_iovs = kcalloc(I10_AGGREGATION_SIZE * 2,
+				sizeof(*queue->caravan_iovs), GFP_KERNEL);
+	if (!queue->caravan_iovs) {
+		ret = -ENOMEM;
+		goto err_sock;
+	}
+	queue->caravan_mapped = kcalloc(I10_AGGREGATION_SIZE,
+				sizeof(**queue->caravan_mapped), GFP_KERNEL);
+	if (!queue->caravan_mapped) {
+		ret = -ENOMEM;
+		goto err_sock;
+	}
+
+	queue->nr_iovs = 0;
+	queue->nr_req = 0;
+	queue->nr_mapped = 0;
+	queue->caravan_len = 0;
+	queue->doorbell_expire = true;
+	queue->send_now = false;
+
+	hrtimer_init(&queue->doorbell_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	queue->doorbell_timer.function = &i10_host_doorbell_timeout;
 
 	ret = sock_create(ctrl->addr.ss_family, SOCK_STREAM,
 			IPPROTO_TCP, &queue->sock);
@@ -1291,6 +1585,24 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	if (ret) {
 		dev_err(nctrl->device,
 			"failed to set TCP_NODELAY sock opt %d\n", ret);
+		goto err_sock;
+	}
+
+	/* jaehyun: Set a large sndbuf/rcvbuf */
+	opt = 8388608;
+	ret = kernel_setsockopt(queue->sock, SOL_SOCKET, SO_SNDBUFFORCE,
+		(char *)&opt, sizeof(opt));
+	if (ret) {
+		dev_err(ctrl->ctrl.device,
+			"failed to set SO_SNDBUFFORCE sock opt %d\n", ret);
+		goto err_sock;
+	}
+
+	ret = kernel_setsockopt(queue->sock, SOL_SOCKET, SO_RCVBUFFORCE,
+		(char *)&opt, sizeof(opt));
+	if (ret) {
+		dev_err(ctrl->ctrl.device,
+			"failed to set SO_RCVBUFFORCE sock opt %d\n", ret);
 		goto err_sock;
 	}
 
@@ -1426,6 +1738,8 @@ static void __nvme_tcp_stop_queue(struct nvme_tcp_queue *queue)
 	kernel_sock_shutdown(queue->sock, SHUT_RDWR);
 	nvme_tcp_restore_sock_calls(queue);
 	cancel_work_sync(&queue->io_work);
+	// jaehyun
+	cancel_work_sync(&queue->io_work_lat);
 }
 
 static void nvme_tcp_stop_queue(struct nvme_ctrl *nctrl, int qid)
@@ -2396,8 +2710,14 @@ static struct nvmf_transport_ops nvme_tcp_transport = {
 static int __init nvme_tcp_init_module(void)
 {
 	nvme_tcp_wq = alloc_workqueue("nvme_tcp_wq",
-			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+			WQ_MEM_RECLAIM, 0);
+//			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 	if (!nvme_tcp_wq)
+		return -ENOMEM;
+
+	nvme_tcp_wq_lat = alloc_workqueue("nvme_tcp_wq_lat",
+			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+	if (!nvme_tcp_wq_lat)
 		return -ENOMEM;
 
 	nvmf_register_transport(&nvme_tcp_transport);
@@ -2417,6 +2737,7 @@ static void __exit nvme_tcp_cleanup_module(void)
 	flush_workqueue(nvme_delete_wq);
 
 	destroy_workqueue(nvme_tcp_wq);
+	destroy_workqueue(nvme_tcp_wq_lat);
 }
 
 module_init(nvme_tcp_init_module);
