@@ -815,7 +815,7 @@ done_send:
 }
 
 /* jaehyun: to check if there's enough room in tcp_sndbuf */
-static inline int i10_target_sndbuf_nospace(struct i10_target_queue *queue,
+static inline int i10_target_sndbuf_nospace(struct nvmet_tcp_queue *queue,
 		int length)
 {
 	return sk_stream_wspace(queue->sock->sk) < length;
@@ -830,8 +830,8 @@ static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
 		ret = nvmet_tcp_try_send_one(queue, i == budget - 1);
 
 		/* jaehyun: send i10 caravans */
-		if ((nvmet_tcp_aggr && queue->send_now || ret <= 0 ||
-			i == budget - 1) && queue->caravan_len) {
+		if (nvmet_tcp_aggr && queue->caravan_len &&
+			(queue->send_now || ret <= 0 || i == budget - 1)) {
 			struct msghdr msg =
 				{ .msg_flags = MSG_DONTWAIT | MSG_EOR };
 			int i10_ret, j;
@@ -853,7 +853,7 @@ static int nvmet_tcp_try_send(struct nvmet_tcp_queue *queue,
 			for (j = 0; j < queue->nr_caravan_cmds; j++) {
 				kfree(queue->caravan_cmds[j].cmd->iov);
 				sgl_free(queue->caravan_cmds[j].cmd->req.sg);
-				i10_target_put_cmd(queue->caravan_cmds[j].cmd);
+				nvmet_tcp_put_cmd(queue->caravan_cmds[j].cmd);
 			}
 
 			for (j = 0; j < queue->nr_caravan_mapped; j++)

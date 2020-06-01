@@ -186,14 +186,14 @@ static inline bool i10_target_has_data_in(struct i10_target_cmd *cmd)
 
 static inline bool i10_target_need_data_in(struct i10_target_cmd *cmd)
 {
-	return i10_target_has_data_in(cmd) && !cmd->req.rsp->status;
+	return i10_target_has_data_in(cmd) && !cmd->req.cqe->status;
 }
 
 static inline bool i10_target_need_data_out(struct i10_target_cmd *cmd)
 {
 	return !nvme_is_write(cmd->req.cmd) &&
 		cmd->req.transfer_len > 0 &&
-		!cmd->req.rsp->status;
+		!cmd->req.cqe->status;
 }
 
 static inline bool i10_target_has_inline_data(struct i10_target_cmd *cmd)
@@ -403,7 +403,7 @@ static void i10_target_setup_c2h_data_pdu(struct i10_target_cmd *cmd)
 	pdu->hdr.plen =
 		cpu_to_le32(pdu->hdr.hlen + hdgst +
 				cmd->req.transfer_len + ddgst);
-	pdu->command_id = cmd->req.rsp->command_id;
+	pdu->command_id = cmd->req.cqe->command_id;
 	pdu->data_length = cpu_to_le32(cmd->req.transfer_len);
 	pdu->data_offset = cpu_to_le32(cmd->wbytes_done);
 
@@ -1373,7 +1373,7 @@ static int i10_target_alloc_cmd(struct i10_target_queue *queue,
 			sizeof(*c->rsp_pdu) + hdgst, GFP_KERNEL | __GFP_ZERO);
 	if (!c->rsp_pdu)
 		goto out_free_cmd;
-	c->req.rsp = &c->rsp_pdu->cqe;
+	c->req.cqe = &c->rsp_pdu->cqe;
 
 	c->data_pdu = page_frag_alloc(&queue->pf_cache,
 			sizeof(*c->data_pdu) + hdgst, GFP_KERNEL | __GFP_ZERO);
