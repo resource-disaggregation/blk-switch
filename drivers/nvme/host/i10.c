@@ -1825,7 +1825,7 @@ static unsigned int i10_host_nr_io_queues(struct nvme_ctrl *ctrl)
 static void i10_host_set_io_queues(struct nvme_ctrl *nctrl,
 		unsigned int nr_io_queues)
 {
-	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
+	struct i10_host_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvmf_ctrl_options *opts = nctrl->opts;
 
 	if (opts->nr_write_queues && opts->nr_io_queues < nr_io_queues) {
@@ -2404,7 +2404,61 @@ static blk_status_t i10_host_queue_rq(struct blk_mq_hw_ctx *hctx,
 	return BLK_STS_OK;
 }
 
+static int i10_host_map_queues(struct blk_mq_tag_set *set)
+{
+	struct i10_host_ctrl *ctrl = set->driver_data;
+	struct nvmf_ctrl_options *opts = ctrl->ctrl.opts;
 
+	if (opts->nr_write_queues && ctrl->io_queues[HCTX_TYPE_READ]) {
+		/* separate read/write queues */
+		set->map[HCTX_TYPE_DEFAULT].nr_queues =
+			ctrl->io_queues[HCTX_TYPE_DEFAULT];
+		set->map[HCTX_TYPE_DEFAULT].queue_offset = 0;
+		set->map[HCTX_TYPE_READ].nr_queues =
+			ctrl->io_queues[HCTX_TYPE_READ];
+		set->map[HCTX_TYPE_READ].queue_offset =
+			ctrl->io_queues[HCTX_TYPE_DEFAULT];
+	} else {
+		/* shared read/write queues */
+		set->map[HCTX_TYPE_DEFAULT].nr_queues =
+			ctrl->io_queues[HCTX_TYPE_DEFAULT];
+		set->map[HCTX_TYPE_DEFAULT].queue_offset = 0;
+		set->map[HCTX_TYPE_READ].nr_queues =
+			ctrl->io_queues[HCTX_TYPE_DEFAULT];
+		set->map[HCTX_TYPE_READ].queue_offset = 0;
+	}
+	blk_mq_map_queues(&set->map[HCTX_TYPE_DEFAULT]);
+	blk_mq_map_queues(&set->map[HCTX_TYPE_READ]);
+
+	if (opts->nr_poll_queues && ctrl->io_queues[HCTX_TYPE_POLL]) {
+		/* map dedicated poll queues only if we have queues left */
+		set->map[HCTX_TYPE_POLL].nr_queues =
+				ctrl->io_queues[HCTX_TYPE_POLL];
+		set->map[HCTX_TYPE_POLL].queue_offset =
+			ctrl->io_queues[HCTX_TYPE_DEFAULT] +
+			ctrl->io_queues[HCTX_TYPE_READ];
+		blk_mq_map_queues(&set->map[HCTX_TYPE_POLL]);
+	}
+
+	dev_info(ctrl->ctrl.device,
+		"mapped %d/%d/%d default/read/poll queues.\n",
+		ctrl->io_queues[HCTX_TYPE_DEFAULT],
+		ctrl->io_queues[HCTX_TYPE_READ],
+		ctrl->io_queues[HCTX_TYPE_POLL]);
+
+	return 0;
+}
+
+static int i10_host_poll(struct blk_mq_hw_ctx *hctx)
+{
+	struct i10_host_queue *queue = hctx->driver_data;
+	struct sock *sk = queue->sock->sk;
+
+	if (sk_can_busy_loop(sk) && skb_queue_empty_lockless(&sk->sk_receive_queue))
+		sk_busy_loop(sk, true);
+	i10_host_try_recv(queue);
+	return queue->nr_cqe;
+}
 
 static struct blk_mq_ops i10_host_mq_ops = {
 	.queue_rq	= i10_host_queue_rq,
@@ -2413,6 +2467,8 @@ static struct blk_mq_ops i10_host_mq_ops = {
 	.exit_request	= i10_host_exit_request,
 	.init_hctx	= i10_host_init_hctx,
 	.timeout	= i10_host_timeout,
+	.map_queues	= i10_host_map_queues,
+	.poll		= i10_host_poll,
 };
 
 static struct blk_mq_ops i10_host_admin_mq_ops = {
@@ -2435,7 +2491,6 @@ static const struct nvme_ctrl_ops i10_host_ctrl_ops = {
 	.submit_async_event	= i10_host_submit_async_event,
 	.delete_ctrl		= i10_host_delete_ctrl,
 	.get_address		= nvmf_get_address,
-	.stop_ctrl		= i10_host_stop_ctrl,
 };
 
 static bool
@@ -2467,7 +2522,8 @@ static struct nvme_ctrl *i10_host_create_ctrl(struct device *dev,
 
 	INIT_LIST_HEAD(&ctrl->list);
 	ctrl->ctrl.opts = opts;
-	ctrl->ctrl.queue_count = opts->nr_io_queues + 1; /* +1 for admin queue */
+	ctrl->ctrl.queue_count = opts->nr_io_queues + opts->nr_write_queues +
+				opts->nr_poll_queues + 1;
 	ctrl->ctrl.sqsize = opts->queue_size - 1;
 	ctrl->ctrl.kato = opts->kato;
 
@@ -2509,7 +2565,7 @@ static struct nvme_ctrl *i10_host_create_ctrl(struct device *dev,
 		goto out_free_ctrl;
 	}
 
-	ctrl->queues = kcalloc(opts->nr_io_queues + 1, sizeof(*ctrl->queues),
+	ctrl->queues = kcalloc(ctrl->ctrl.queue_count, sizeof(*ctrl->queues),
 				GFP_KERNEL);
 	if (!ctrl->queues) {
 		ret = -ENOMEM;
@@ -2560,7 +2616,9 @@ static struct nvmf_transport_ops i10_host_transport = {
 	.required_opts	= NVMF_OPT_TRADDR,
 	.allowed_opts	= NVMF_OPT_TRSVCID | NVMF_OPT_RECONNECT_DELAY |
 			  NVMF_OPT_HOST_TRADDR | NVMF_OPT_CTRL_LOSS_TMO |
-			  NVMF_OPT_HDR_DIGEST | NVMF_OPT_DATA_DIGEST,
+			  NVMF_OPT_HDR_DIGEST | NVMF_OPT_DATA_DIGEST |
+			  NVMF_OPT_NR_WRITE_QUEUES | NVMF_OPT_NR_POLL_QUEUES |
+			  NVMF_OPT_TOS,
 	.create_ctrl	= i10_host_create_ctrl,
 };
 
