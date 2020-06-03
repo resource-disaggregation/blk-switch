@@ -32,7 +32,7 @@
 #include "fabrics.h"
 
 #define I10_CARAVAN_CAPACITY		65536
-#define I10_AGGREGATION_SIZE		16
+#define I10_AGGREGATION_SIZE		32
 #define I10_MIN_DOORBELL_TIMEOUT	25
 
 static int i10_delayed_doorbell_us __read_mostly = 50;
@@ -46,7 +46,7 @@ enum i10_host_send_state {
 	I10_HOST_SEND_CMD_PDU = 0,
 	I10_HOST_SEND_H2C_PDU,
 	I10_HOST_SEND_DATA,
-	I10_HOST_SEND_DDGST,
+	I10_TCP_SEND_DDGST,
 };
 
 struct i10_host_request {
@@ -58,7 +58,7 @@ struct i10_host_request {
 	u32			pdu_sent;
 	u16			ttag;
 	struct list_head	entry;
-	u32			ddgst;
+	__le32			ddgst;
 
 	struct bio		*curr_bio;
 	struct iov_iter		iter;
@@ -75,9 +75,9 @@ enum i10_host_queue_flags {
 };
 
 enum i10_host_recv_state {
-	NVME_TCP_RECV_PDU = 0,
-	NVME_TCP_RECV_DATA,
-	NVME_TCP_RECV_DDGST,
+	I10_HOST_RECV_PDU = 0,
+	I10_HOST_RECV_DATA,
+	I10_HOST_RECV_DDGST,
 };
 
 struct i10_host_ctrl;
@@ -298,7 +298,7 @@ static bool i10_host_is_nodelay_path(struct i10_host_request *req)
 		(req->curr_bio->bi_opf & ~I10_ALLOWED_FLAGS);
 }
 
-static inline void i10_host_queue_request(struct i10_host_request *req)
+static void i10_host_queue_request(struct i10_host_request *req)
 {
 	struct i10_host_queue *queue = req->queue;
 
@@ -482,9 +482,9 @@ static int i10_host_init_admin_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 static enum i10_host_recv_state
 i10_host_recv_state(struct i10_host_queue *queue)
 {
-	return  (queue->pdu_remaining) ? NVME_TCP_RECV_PDU :
-		(queue->ddgst_remaining) ? NVME_TCP_RECV_DDGST :
-		NVME_TCP_RECV_DATA;
+	return  (queue->pdu_remaining) ? I10_HOST_RECV_PDU :
+		(queue->ddgst_remaining) ? I10_HOST_RECV_DDGST :
+		I10_HOST_RECV_DATA;
 }
 
 static void i10_host_init_recv_ctx(struct i10_host_queue *queue)
@@ -501,7 +501,7 @@ static void i10_host_error_recovery(struct nvme_ctrl *ctrl)
 	if (!nvme_change_ctrl_state(ctrl, NVME_CTRL_RESETTING))
 		return;
 
-	queue_work(nvme_wq, &to_i10_host_ctrl(ctrl)->err_work);
+	queue_work(nvme_reset_wq, &to_i10_host_ctrl(ctrl)->err_work);
 }
 
 static int i10_host_process_nvme_cqe(struct i10_host_queue *queue,
@@ -547,16 +547,15 @@ static int i10_host_handle_c2h_data(struct i10_host_queue *queue,
 	queue->data_remaining = le32_to_cpu(pdu->data_length);
 
 	if (pdu->hdr.flags & NVME_TCP_F_DATA_SUCCESS &&
-		unlikely(!(pdu->hdr.flags & NVME_TCP_F_DATA_LAST))) {
-			dev_err(queue->ctrl->ctrl.device,
-				"queue %d tag %#x SUCCESS set but not last PDU\n",
-				i10_host_queue_id(queue), rq->tag);
-			i10_host_error_recovery(&queue->ctrl->ctrl);
-			return -EPROTO;
+	    unlikely(!(pdu->hdr.flags & NVME_TCP_F_DATA_LAST))) {
+		dev_err(queue->ctrl->ctrl.device,
+			"queue %d tag %#x SUCCESS set but not last PDU\n",
+			i10_host_queue_id(queue), rq->tag);
+		i10_host_error_recovery(&queue->ctrl->ctrl);
+		return -EPROTO;
 	}
 
 	return 0;
-
 }
 
 static int i10_host_handle_comp(struct i10_host_queue *queue,
@@ -761,7 +760,7 @@ static int i10_host_recv_data(struct i10_host_queue *queue, struct sk_buff *skb,
 				&req->iter, recv_len, queue->rcv_hash);
 		else
 			ret = skb_copy_datagram_iter(skb, *offset,
-				&req->iter, recv_len);
+					&req->iter, recv_len);
 		if (ret) {
 			dev_err(queue->ctrl->ctrl.device,
 				"queue %d failed to copy request %#x data",
@@ -838,13 +837,13 @@ static int i10_host_recv_skb(read_descriptor_t *desc, struct sk_buff *skb,
 
 	while (len) {
 		switch (i10_host_recv_state(queue)) {
-		case NVME_TCP_RECV_PDU:
+		case I10_HOST_RECV_PDU:
 			result = i10_host_recv_pdu(queue, skb, &offset, &len);
 			break;
-		case NVME_TCP_RECV_DATA:
+		case I10_HOST_RECV_DATA:
 			result = i10_host_recv_data(queue, skb, &offset, &len);
 			break;
-		case NVME_TCP_RECV_DDGST:
+		case I10_HOST_RECV_DDGST:
 			result = i10_host_recv_ddgst(queue, skb, &offset, &len);
 			break;
 		default:
@@ -869,7 +868,7 @@ static void i10_host_data_ready(struct sock *sk)
 	read_lock(&sk->sk_callback_lock);
 	queue = sk->sk_user_data;
 	if (likely(queue && queue->rd_enabled))
-		queue_work_on(queue->io_cpu, i10_host_wq, &queue->io_work);
+			queue_work_on(queue->io_cpu, i10_host_wq, &queue->io_work);
 	read_unlock(&sk->sk_callback_lock);
 }
 
@@ -985,7 +984,7 @@ static int i10_host_try_send_data(struct i10_host_request *req)
 			if (queue->data_digest) {
 				i10_host_ddgst_final(queue->snd_hash,
 					&req->ddgst);
-				req->state = I10_HOST_SEND_DDGST;
+				req->state = I10_TCP_SEND_DDGST;
 				req->offset = 0;
 			} else {
 				i10_host_done_send_req(queue);
@@ -1011,7 +1010,7 @@ static int i10_host_try_send_cmd_pdu(struct i10_host_request *req)
 
 	if (i10_host_legacy_path(req))
 		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
-			offset_in_page(pdu) + req->offset, len, flags);
+			offset_in_page(pdu) + req->offset, len,  flags);
 	else {
 		if (i10_host_is_caravan_full(queue, len)) {
 			queue->send_now = true;
@@ -1130,9 +1129,9 @@ static bool i10_host_send_caravan(struct i10_host_queue *queue)
 	 * 3. No more request remains in i10 queue
 	 */
 	return queue->send_now ||
-		(queue->doorbell_expire && 
+		(queue->doorbell_expire &&
 		!queue->request && queue->caravan_len);
-}	
+}
 
 static int i10_host_try_send(struct i10_host_queue *queue)
 {
@@ -1200,7 +1199,7 @@ static int i10_host_try_send(struct i10_host_queue *queue)
 			goto done;
 	}
 
-	if (req->state == I10_HOST_SEND_DDGST)
+	if (req->state == I10_TCP_SEND_DDGST)
 		ret = i10_host_try_send_ddgst(req);
 done:
 	if (ret == -EAGAIN)
@@ -1253,7 +1252,12 @@ static void i10_host_io_work(struct work_struct *w)
 		} else if (unlikely(result < 0)) {
 			dev_err(queue->ctrl->ctrl.device,
 				"failed to send request %d\n", result);
-			if (result != -EPIPE)
+
+			/*
+			 * Fail the request unless peer closed the connection,
+			 * in which case error recovery flow will complete all.
+			 */
+			if ((result != -EPIPE) && (result != -ECONNRESET))
 				i10_host_fail_request(queue->request);
 			i10_host_done_send_req(queue);
 			return;
@@ -1451,7 +1455,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	struct i10_host_ctrl *ctrl = to_i10_host_ctrl(nctrl);
 	struct i10_host_queue *queue = &ctrl->queues[qid];
 	struct linger sol = { .l_onoff = 1, .l_linger = 0 };
-	int ret, opt, rcv_pdu_size;
+	int ret, opt, rcv_pdu_size, n;
 
 	queue->ctrl = ctrl;
 	INIT_LIST_HEAD(&queue->send_list);
@@ -1460,7 +1464,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	queue->queue_size = queue_size;
 
 	if (qid > 0)
-		queue->cmnd_capsule_len = ctrl->ctrl.ioccsz * 16;
+		queue->cmnd_capsule_len = nctrl->ioccsz * 16;
 	else
 		queue->cmnd_capsule_len = sizeof(struct nvme_command) +
 						NVME_TCP_ADMIN_CCSZ;
@@ -1468,7 +1472,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	ret = sock_create(ctrl->addr.ss_family, SOCK_STREAM,
 			IPPROTO_TCP, &queue->sock);
 	if (ret) {
-		dev_err(ctrl->ctrl.device,
+		dev_err(nctrl->device,
 			"failed to create socket: %d\n", ret);
 		return ret;
 	}
@@ -1478,7 +1482,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	ret = kernel_setsockopt(queue->sock, IPPROTO_TCP, TCP_SYNCNT,
 			(char *)&opt, sizeof(opt));
 	if (ret) {
-		dev_err(ctrl->ctrl.device,
+		dev_err(nctrl->device,
 			"failed to set TCP_SYNCNT sock opt %d\n", ret);
 		goto err_sock;
 	}
@@ -1488,7 +1492,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	ret = kernel_setsockopt(queue->sock, IPPROTO_TCP,
 			TCP_NODELAY, (char *)&opt, sizeof(opt));
 	if (ret) {
-		dev_err(ctrl->ctrl.device,
+		dev_err(nctrl->device,
 			"failed to set TCP_NODELAY sock opt %d\n", ret);
 		goto err_sock;
 	}
@@ -1509,7 +1513,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 		dev_err(ctrl->ctrl.device,
 			"failed to set SO_RCVBUFFORCE sock opt %d\n", ret);
 		goto err_sock;
-	}	
+	}
 
 	/*
 	 * Cleanup whatever is sitting in the TCP transmit queue on socket
@@ -1519,13 +1523,29 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	ret = kernel_setsockopt(queue->sock, SOL_SOCKET, SO_LINGER,
 			(char *)&sol, sizeof(sol));
 	if (ret) {
-		dev_err(ctrl->ctrl.device,
+		dev_err(nctrl->device,
 			"failed to set SO_LINGER sock opt %d\n", ret);
 		goto err_sock;
 	}
 
+	/* Set socket type of service */
+	if (nctrl->opts->tos >= 0) {
+		opt = nctrl->opts->tos;
+		ret = kernel_setsockopt(queue->sock, SOL_IP, IP_TOS,
+				(char *)&opt, sizeof(opt));
+		if (ret) {
+			dev_err(nctrl->device,
+				"failed to set IP_TOS sock opt %d\n", ret);
+			goto err_sock;
+		}
+	}
+
 	queue->sock->sk->sk_allocation = GFP_ATOMIC;
-	queue->io_cpu = (qid == 0) ? 0 : qid - 1;
+	if (!qid)
+		n = 0;
+	else
+		n = (qid - 1) % num_online_cpus();
+	queue->io_cpu = cpumask_next_wrap(n - 1, cpu_online_mask, -1, false);
 	queue->request = NULL;
 	queue->data_remaining = 0;
 	queue->ddgst_remaining = 0;
@@ -1533,11 +1553,11 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	queue->pdu_offset = 0;
 	sk_set_memalloc(queue->sock->sk);
 
-	if (ctrl->ctrl.opts->mask & NVMF_OPT_HOST_TRADDR) {
+	if (nctrl->opts->mask & NVMF_OPT_HOST_TRADDR) {
 		ret = kernel_bind(queue->sock, (struct sockaddr *)&ctrl->src_addr,
 			sizeof(ctrl->src_addr));
 		if (ret) {
-			dev_err(ctrl->ctrl.device,
+			dev_err(nctrl->device,
 				"failed to bind queue %d socket %d\n",
 				qid, ret);
 			goto err_sock;
@@ -1575,7 +1595,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 	if (queue->hdr_digest || queue->data_digest) {
 		ret = i10_host_alloc_crypto(queue);
 		if (ret) {
-			dev_err(ctrl->ctrl.device,
+			dev_err(nctrl->device,
 				"failed to allocate queue %d crypto\n", qid);
 			goto err_caravan_mapped;
 		}
@@ -1589,13 +1609,13 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 		goto err_crypto;
 	}
 
-	dev_dbg(ctrl->ctrl.device, "connecting queue %d\n",
+	dev_dbg(nctrl->device, "connecting queue %d\n",
 			i10_host_queue_id(queue));
 
 	ret = kernel_connect(queue->sock, (struct sockaddr *)&ctrl->addr,
 		sizeof(ctrl->addr), 0);
 	if (ret) {
-		dev_err(ctrl->ctrl.device,
+		dev_err(nctrl->device,
 			"failed to connect socket: %d\n", ret);
 		goto err_rcv_pdu;
 	}
@@ -1886,8 +1906,7 @@ static void i10_host_destroy_io_queues(struct nvme_ctrl *ctrl, bool remove)
 {
 	i10_host_stop_io_queues(ctrl);
 	if (remove) {
-		if (ctrl->ops->flags & NVME_F_FABRICS)
-			blk_cleanup_queue(ctrl->connect_q);
+		blk_cleanup_queue(ctrl->connect_q);
 		blk_mq_free_tag_set(ctrl->tagset);
 	}
 	i10_host_free_io_queues(ctrl);
@@ -1939,8 +1958,8 @@ static void i10_host_destroy_admin_queue(struct nvme_ctrl *ctrl, bool remove)
 {
 	i10_host_stop_queue(ctrl, 0);
 	if (remove) {
-		free_opal_dev(ctrl->opal_dev);
 		blk_cleanup_queue(ctrl->admin_q);
+		blk_cleanup_queue(ctrl->fabrics_q);
 		blk_mq_free_tag_set(ctrl->admin_tagset);
 	}
 	i10_host_free_admin_queue(ctrl);
@@ -2120,7 +2139,7 @@ static void i10_host_reconnect_ctrl_work(struct work_struct *work)
 	if (i10_host_setup_ctrl(ctrl, false))
 		goto requeue;
 
-	dev_info(ctrl->device, "Successfully reconnected (%d attepmpt)\n",
+	dev_info(ctrl->device, "Successfully reconnected (%d attempt)\n",
 			ctrl->nr_reconnects);
 
 	ctrl->nr_reconnects = 0;
@@ -2323,7 +2342,7 @@ static blk_status_t i10_host_map_data(struct i10_host_queue *queue,
 	if (!blk_rq_nr_phys_segments(rq))
 		i10_host_set_sg_null(c);
 	else if (rq_data_dir(rq) == WRITE &&
-		req->data_len <= i10_host_inline_data_size(queue))
+	    req->data_len <= i10_host_inline_data_size(queue))
 		i10_host_set_sg_inline(queue, c, req->data_len);
 	else
 		i10_host_set_sg_host_data(c, req->data_len);

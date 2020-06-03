@@ -1415,6 +1415,9 @@ static void nvme_tcp_free_queue(struct nvme_ctrl *nctrl, int qid)
 
 	sock_release(queue->sock);
 	kfree(queue->pdu);
+	kfree(queue->caravan_iovs);
+	kfree(queue->caravan_mapped);
+	hrtimer_cancel(&queue->doorbell_timer);
 }
 
 static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
