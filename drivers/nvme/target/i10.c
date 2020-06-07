@@ -486,10 +486,9 @@ static inline bool i10_target_is_admin_queue(struct i10_target_queue *queue)
 	return queue->nvme_sq.qid == 0; 
 }
 
-static inline bool i10_target_is_caravan_full(struct i10_target_queue *queue,
-						int len)
+static inline bool i10_target_is_caravan_full(struct i10_target_queue *queue)
 {
-	return (queue->caravan_len + len >= I10_CARAVAN_CAPACITY) ||
+	return (queue->caravan_len >= I10_CARAVAN_CAPACITY) ||
 		(queue->nr_iovs >= I10_TARGET_SEND_BUDGET * 3) ||
 		(queue->nr_caravan_cmds >= I10_TARGET_SEND_BUDGET) ||
 		(queue->nr_caravan_mapped >= I10_TARGET_SEND_BUDGET);
@@ -540,7 +539,7 @@ static int i10_target_try_send_data_pdu(struct i10_target_cmd *cmd)
 
 	/* Caravans: data PDU aggregation */
 	if (!i10_target_is_admin_queue(queue)) {
-		if (i10_target_is_caravan_full(queue, left)) {
+		if (i10_target_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}
@@ -581,7 +580,7 @@ static int i10_target_try_send_data(struct i10_target_cmd *cmd, bool last_in_bat
 
 		/* Caravans: I/O data aggregation */
 		if (!i10_target_is_admin_queue(queue)) {
-			if (i10_target_is_caravan_full(queue, left)) {
+			if (i10_target_is_caravan_full(queue)) {
 				queue->send_now = true;
 				return 1;
 			}
@@ -651,7 +650,7 @@ static int i10_target_try_send_response(struct i10_target_cmd *cmd,
 
 	/* Caravans: response PDU aggregation */
 	if (!i10_target_is_admin_queue(queue)) {
-		if (i10_target_is_caravan_full(queue, left)) {
+		if (i10_target_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}
@@ -699,7 +698,7 @@ static int i10_target_try_send_r2t(struct i10_target_cmd *cmd, bool last_in_batc
 
 	/* Caravans: r2t PDU aggregation */
 	if (!i10_target_is_admin_queue(queue)) {
-		if (i10_target_is_caravan_full(queue, left)) {
+		if (i10_target_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}

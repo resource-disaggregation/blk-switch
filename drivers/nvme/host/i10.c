@@ -32,7 +32,7 @@
 #include "fabrics.h"
 
 #define I10_CARAVAN_CAPACITY		65536
-#define I10_AGGREGATION_SIZE		32
+#define I10_AGGREGATION_SIZE		16
 #define I10_MIN_DOORBELL_TIMEOUT	25
 
 static int i10_delayed_doorbell_us __read_mostly = 50;
@@ -70,8 +70,8 @@ struct i10_host_request {
 };
 
 enum i10_host_queue_flags {
-	NVME_TCP_Q_ALLOCATED	= 0,
-	NVME_TCP_Q_LIVE		= 1,
+	I10_HOST_Q_ALLOCATED	= 0,
+	I10_HOST_Q_LIVE		= 1,
 };
 
 enum i10_host_recv_state {
@@ -124,7 +124,6 @@ struct i10_host_queue {
 
 	/* For i10 delayed doorbells */
 	int			nr_req;
-	bool			doorbell_expire;
 	struct hrtimer		doorbell_timer;
 
 	struct page_frag_cache	pf_cache;
@@ -310,31 +309,26 @@ static void i10_host_queue_request(struct i10_host_request *req)
 		queue->nr_req++;
 
 		/* Start a delayed doorbell timer */
-		if (queue->doorbell_expire) {
+		if (!hrtimer_active(&queue->doorbell_timer) &&
+			queue->nr_req == 1)
 			hrtimer_start(&queue->doorbell_timer,
 				ns_to_ktime(i10_delayed_doorbell_us *
 					NSEC_PER_USEC),
 				HRTIMER_MODE_REL);
-			queue->doorbell_expire = false;
-		}
 		/* Ring the delayed doorbell
 		 * if I/O request counter >= i10 aggregation size
 		 */
 		else if (queue->nr_req >= I10_AGGREGATION_SIZE) {
-			hrtimer_cancel(&queue->doorbell_timer);
-			queue->doorbell_expire = true;
-			queue->nr_req = 0;
+			if (hrtimer_active(&queue->doorbell_timer))
+				hrtimer_cancel(&queue->doorbell_timer);
 			queue_work_on(queue->io_cpu, i10_host_wq,
 					&queue->io_work);
 		}
 	}
 	/* Ring the doorbell immediately for no-delay path */
 	else {
-		if (!queue->doorbell_expire) {
+		if (hrtimer_active(&queue->doorbell_timer))
 			hrtimer_cancel(&queue->doorbell_timer);
-			queue->doorbell_expire = true;
-			queue->nr_req = 0;
-		}
 		queue_work_on(queue->io_cpu, i10_host_wq, &queue->io_work);
 	}
 }
@@ -924,9 +918,9 @@ static void i10_host_fail_request(struct i10_host_request *req)
 	i10_host_end_request(blk_mq_rq_from_pdu(req), NVME_SC_HOST_PATH_ERROR);
 }
 
-static inline bool i10_host_is_caravan_full(struct i10_host_queue *queue, int len)
+static inline bool i10_host_is_caravan_full(struct i10_host_queue *queue)
 {
-	return (queue->caravan_len + len >= I10_CARAVAN_CAPACITY) ||
+	return (queue->caravan_len >= I10_CARAVAN_CAPACITY) ||
 		(queue->nr_iovs >= I10_AGGREGATION_SIZE * 2) ||
 		(queue->nr_mapped >= I10_AGGREGATION_SIZE);
 }
@@ -958,7 +952,7 @@ static int i10_host_try_send_data(struct i10_host_request *req)
 			}
 		}
 		else {
-			if (i10_host_is_caravan_full(queue, len)) {
+			if (i10_host_is_caravan_full(queue)) {
 				queue->send_now = true;
 				return 1;
 			}
@@ -1012,7 +1006,7 @@ static int i10_host_try_send_cmd_pdu(struct i10_host_request *req)
 		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,  flags);
 	else {
-		if (i10_host_is_caravan_full(queue, len)) {
+		if (i10_host_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}
@@ -1063,7 +1057,7 @@ static int i10_host_try_send_data_pdu(struct i10_host_request *req)
 			offset_in_page(pdu) + req->offset, len,
 			MSG_DONTWAIT | MSG_MORE);
 	else {
-		if (i10_host_is_caravan_full(queue, len)) {
+		if (i10_host_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}
@@ -1129,7 +1123,7 @@ static bool i10_host_send_caravan(struct i10_host_queue *queue)
 	 * 3. No more request remains in i10 queue
 	 */
 	return queue->send_now ||
-		(queue->doorbell_expire &&
+		(!hrtimer_active(&queue->doorbell_timer) &&
 		!queue->request && queue->caravan_len);
 }
 
@@ -1160,14 +1154,17 @@ static int i10_host_try_send(struct i10_host_queue *queue)
 				queue->nr_iovs,
 				queue->caravan_len);
 
-		if (unlikely(i10_ret <= 0))
+		if (unlikely(i10_ret <= 0)) {
 			dev_err(queue->ctrl->ctrl.device,
 				"I10_HOST: kernel_sendmsg fails (i10_ret %d)\n",
 				i10_ret);
+			return i10_ret;
+		}
 
 		for (i = 0; i < queue->nr_mapped; i++)
 			kunmap(queue->caravan_mapped[i]);
 
+		queue->nr_req = 0;
 		queue->nr_iovs = 0;
 		queue->nr_mapped = 0;
 		queue->caravan_len = 0;
@@ -1229,10 +1226,7 @@ enum hrtimer_restart i10_host_doorbell_timeout(struct hrtimer *timer)
 		container_of(timer, struct i10_host_queue,
 			doorbell_timer);
 
-	queue->doorbell_expire = true;
-	queue->nr_req = 0;
 	queue_work_on(queue->io_cpu, i10_host_wq, &queue->io_work);
-
 	return HRTIMER_NORESTART;
 }
 
@@ -1338,7 +1332,7 @@ static void i10_host_free_queue(struct nvme_ctrl *nctrl, int qid)
 	struct i10_host_ctrl *ctrl = to_i10_host_ctrl(nctrl);
 	struct i10_host_queue *queue = &ctrl->queues[qid];
 
-	if (!test_and_clear_bit(NVME_TCP_Q_ALLOCATED, &queue->flags))
+	if (!test_and_clear_bit(I10_HOST_Q_ALLOCATED, &queue->flags))
 		return;
 
 	if (queue->hdr_digest || queue->data_digest)
@@ -1579,11 +1573,10 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 		goto err_caravan_iovs;
 	}
 
-	queue->nr_iovs = 0;
 	queue->nr_req = 0;
+	queue->nr_iovs = 0;
 	queue->nr_mapped = 0;
 	queue->caravan_len = 0;
-	queue->doorbell_expire = true;
 	queue->send_now = false;
 
 	/* i10 delayed doorbell setup */
@@ -1625,7 +1618,7 @@ static int i10_host_alloc_queue(struct nvme_ctrl *nctrl,
 		goto err_init_connect;
 
 	queue->rd_enabled = true;
-	set_bit(NVME_TCP_Q_ALLOCATED, &queue->flags);
+	set_bit(I10_HOST_Q_ALLOCATED, &queue->flags);
 	i10_host_init_recv_ctx(queue);
 
 	write_lock_bh(&queue->sock->sk->sk_callback_lock);
@@ -1684,7 +1677,7 @@ static void i10_host_stop_queue(struct nvme_ctrl *nctrl, int qid)
 	struct i10_host_ctrl *ctrl = to_i10_host_ctrl(nctrl);
 	struct i10_host_queue *queue = &ctrl->queues[qid];
 
-	if (!test_and_clear_bit(NVME_TCP_Q_LIVE, &queue->flags))
+	if (!test_and_clear_bit(I10_HOST_Q_LIVE, &queue->flags))
 		return;
 
 	__i10_host_stop_queue(queue);
@@ -1701,9 +1694,9 @@ static int i10_host_start_queue(struct nvme_ctrl *nctrl, int idx)
 		ret = nvmf_connect_admin_queue(nctrl);
 
 	if (!ret) {
-		set_bit(NVME_TCP_Q_LIVE, &ctrl->queues[idx].flags);
+		set_bit(I10_HOST_Q_LIVE, &ctrl->queues[idx].flags);
 	} else {
-		if (test_bit(NVME_TCP_Q_ALLOCATED, &ctrl->queues[idx].flags))
+		if (test_bit(I10_HOST_Q_ALLOCATED, &ctrl->queues[idx].flags))
 			__i10_host_stop_queue(&ctrl->queues[idx]);
 		dev_err(nctrl->device,
 			"failed to connect queue: %d ret=%d\n", idx, ret);
@@ -2409,7 +2402,7 @@ static blk_status_t i10_host_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct i10_host_queue *queue = hctx->driver_data;
 	struct request *rq = bd->rq;
 	struct i10_host_request *req = blk_mq_rq_to_pdu(rq);
-	bool queue_ready = test_bit(NVME_TCP_Q_LIVE, &queue->flags);
+	bool queue_ready = test_bit(I10_HOST_Q_LIVE, &queue->flags);
 	blk_status_t ret;
 
 	if (!nvmf_check_ready(&queue->ctrl->ctrl, rq, queue_ready))

@@ -24,7 +24,7 @@
 
 // jaehyun
 #define I10_CARAVAN_CAPACITY		65536
-#define I10_AGGREGATION_SIZE		32
+#define I10_AGGREGATION_SIZE		16
 #define I10_MIN_DOORBELL_TIMEOUT	25
 
 static int i10_aggregation_size __read_mostly = 16;
@@ -34,6 +34,10 @@ MODULE_PARM_DESC(i10_aggregation_size, "i10 aggregation size");
 static int i10_delayed_doorbell_us __read_mostly = 50;
 module_param(i10_delayed_doorbell_us, int, 0644);
 MODULE_PARM_DESC(i10_delayed_doorbell_us, "i10 delayed doorbell timer (us)");
+
+static int i10_printk_core __read_mostly = -1;
+module_param(i10_printk_core, int, 0644);
+MODULE_PARM_DESC(i10_printk_core, "i10 delayed doorbell timer (us)");
 
 struct nvme_tcp_queue;
 
@@ -131,7 +135,6 @@ struct nvme_tcp_queue {
 
 	/* jaehyun: For i10 delayed doorbells */
 	int			nr_req;
-	bool			doorbell_expire;
 	struct hrtimer		doorbell_timer;
 
 	struct page_frag_cache	pf_cache;
@@ -310,8 +313,8 @@ static inline bool i10_host_legacy_path(struct nvme_tcp_request *req)
 static bool i10_host_is_nodelay_path(struct nvme_tcp_request *req)
 {
 	return (req->curr_bio == NULL) ||
-		(req->curr_bio->bi_opf & ~I10_ALLOWED_FLAGS) ||
-		i10_host_is_latency(req->queue);
+		(req->curr_bio->bi_opf & ~I10_ALLOWED_FLAGS); //||
+//		i10_host_is_latency(req->queue);
 }
 
 // jaehyun
@@ -319,36 +322,48 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 {
 	struct nvme_tcp_queue *queue = req->queue;
 
-	queue->nice = task_nice(current);
+	//queue->nice = task_nice(current);
+	queue->nice = 0;
 
 	spin_lock(&queue->lock);
 	list_add_tail(&req->entry, &queue->send_list);
 	spin_unlock(&queue->lock);
 
-	//printk(KERN_DEBUG "(pid %d cpu %d): queue id %d io_cpu %d tag %d", current->pid, current->cpu, nvme_tcp_queue_id(queue), queue->io_cpu, blk_mq_rq_from_pdu(req)->tag);
+	//if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
+	//	printk(KERN_DEBUG "(pid %d cpu %d): Enqueue! qid %d io_cpu %d tag %d", current->pid, current->cpu, nvme_tcp_queue_id(queue), queue->io_cpu, blk_mq_rq_from_pdu(req)->tag);
 
+	if (i10_printk_core >= 0 && current->cpu == i10_printk_core) {
+		if (req->curr_bio)
+			printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d opf %u flags %u", current->pid, current->cpu, task_nice(current), queue->nr_req, req->curr_bio->bi_opf, req->curr_bio->bi_flags);
+		else
+			printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d bio null", current->pid, current->cpu, task_nice(current), queue->nr_req);
+	}
+
+	//if (queue->doorbell_expire && queue->nr_req) {
+	//	if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
+	//		printk(KERN_DEBUG "(pid %d cpu %d): Enqueue but expired! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, queue->nr_req, nvme_tcp_queue_id(queue), queue->io_cpu);
+	//	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+	//}
 	if (!i10_host_legacy_path(req) && !i10_host_is_nodelay_path(req)) {
 		queue->nr_req++;
 
-		if (queue->doorbell_expire) {
+		if (!hrtimer_active(&queue->doorbell_timer) && queue->nr_req == 1)
 			hrtimer_start(&queue->doorbell_timer,
 				ns_to_ktime(i10_delayed_doorbell_us * NSEC_PER_USEC),
 				HRTIMER_MODE_REL);
-			queue->doorbell_expire = false;
-		}
 		else if (queue->nr_req >= i10_aggregation_size) {
-			hrtimer_cancel(&queue->doorbell_timer);
-			queue->doorbell_expire = true;
-			queue->nr_req = 0;
+			if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
+				printk(KERN_DEBUG "(pid %d cpu %d): Ring! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, queue->nr_req, nvme_tcp_queue_id(queue), queue->io_cpu);
+			if (hrtimer_active(&queue->doorbell_timer))	
+				hrtimer_cancel(&queue->doorbell_timer);
 			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 		}
 	}
 	else {
-		if (!queue->doorbell_expire) {
+		if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
+			printk(KERN_DEBUG "(pid %d cpu %d): Nodelay! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, queue->nr_req, nvme_tcp_queue_id(queue), queue->io_cpu);
+		if (hrtimer_active(&queue->doorbell_timer))
 			hrtimer_cancel(&queue->doorbell_timer);
-			queue->doorbell_expire = true;
-			queue->nr_req = 0;
-		}
 
 		if (i10_host_is_latency(queue))
 			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
@@ -953,9 +968,9 @@ static void nvme_tcp_fail_request(struct nvme_tcp_request *req)
 }
 
 /* jaehyun */
-static inline bool i10_host_is_caravan_full(struct nvme_tcp_queue *queue, int len)
+static inline bool i10_host_is_caravan_full(struct nvme_tcp_queue *queue)
 {
-	return (queue->caravan_len + len >= I10_CARAVAN_CAPACITY) ||
+	return (queue->caravan_len >= I10_CARAVAN_CAPACITY) ||
 		(queue->nr_iovs >= I10_AGGREGATION_SIZE * 2) ||
 		(queue->nr_mapped >= I10_AGGREGATION_SIZE);
 }
@@ -988,7 +1003,7 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 			}
 		}
 		else {
-			if (i10_host_is_caravan_full(queue, len)) {
+			if (i10_host_is_caravan_full(queue)) {
 				queue->send_now = true;
 				return 1;
 			}
@@ -1043,7 +1058,7 @@ static int nvme_tcp_try_send_cmd_pdu(struct nvme_tcp_request *req)
 		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,  flags);
 	else {
-		if (i10_host_is_caravan_full(queue, len)) {
+		if (i10_host_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}
@@ -1095,7 +1110,7 @@ static int nvme_tcp_try_send_data_pdu(struct nvme_tcp_request *req)
 			offset_in_page(pdu) + req->offset, len,
 			MSG_DONTWAIT | MSG_MORE);
 	else {
-		if (i10_host_is_caravan_full(queue, len)) {
+		if (i10_host_is_caravan_full(queue)) {
 			queue->send_now = true;
 			return 1;
 		}
@@ -1161,7 +1176,7 @@ static bool i10_host_send_caravan(struct nvme_tcp_queue *queue)
 	 * 3. No more request remains in i10 queue
 	 */
 	return queue->send_now ||
-		(queue->doorbell_expire &&
+		(!hrtimer_active(&queue->doorbell_timer) &&
 		!queue->request && queue->caravan_len);
 }
 
@@ -1179,23 +1194,29 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 	/* jaehyun: pdu aggregation */
 	if (i10_host_send_caravan(queue)) {
 		struct msghdr msg = { .msg_flags = MSG_DONTWAIT | MSG_EOR };
-		int i, i10_ret = 0;
+		int i, i10_ret;
 
 		if (nvme_tcp_sndbuf_nospace(queue, queue->caravan_len)) {
 			set_bit(SOCK_NOSPACE, &queue->sock->sk->sk_socket->flags);
 			return 0;
 		}
 
+		if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
+			printk(KERN_DEBUG "(pid %d cpu %d) send caravan: len %lu nr_iovs %d nr_mapped %d send_now %s", current->pid, current->cpu, queue->caravan_len, queue->nr_iovs, queue->nr_mapped, queue->send_now ? "true":"false");
+
 		i10_ret = kernel_sendmsg(queue->sock, &msg,
 				queue->caravan_iovs,
 				queue->nr_iovs,
 				queue->caravan_len);
-		if (i10_ret <= 0)
+		if (i10_ret <= 0) {
 			printk(KERN_DEBUG "jaehyun: why kernel_sendmsg fails??? i10_ret %d", i10_ret);
+			return i10_ret;
+		}
 
 		for (i = 0; i < queue->nr_mapped; i++)
 			kunmap(queue->caravan_mapped[i]);
 
+		queue->nr_req = 0;
 		queue->nr_iovs = 0;
 		queue->nr_mapped = 0;
 		queue->caravan_len = 0;
@@ -1257,11 +1278,10 @@ enum hrtimer_restart i10_host_doorbell_timeout(struct hrtimer *timer)
 	struct nvme_tcp_queue *queue =
 		container_of(timer, struct nvme_tcp_queue, doorbell_timer);
 
-	queue->doorbell_expire = true;
-	queue->nr_req = 0;
+	if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
+		printk(KERN_DEBUG "(pid %d cpu %d): Timeout! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, queue->nr_req, nvme_tcp_queue_id(queue), queue->io_cpu);
 
 	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
-
 	return HRTIMER_NORESTART;
 }
 
@@ -1557,7 +1577,6 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	queue->nr_req = 0;
 	queue->nr_mapped = 0;
 	queue->caravan_len = 0;
-	queue->doorbell_expire = true;
 	queue->send_now = false;
 
 	hrtimer_init(&queue->doorbell_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -2713,8 +2732,8 @@ static struct nvmf_transport_ops nvme_tcp_transport = {
 static int __init nvme_tcp_init_module(void)
 {
 	nvme_tcp_wq = alloc_workqueue("nvme_tcp_wq",
-			WQ_MEM_RECLAIM, 0);
-//			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+//			WQ_MEM_RECLAIM, 0);
+			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 	if (!nvme_tcp_wq)
 		return -ENOMEM;
 
