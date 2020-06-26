@@ -498,7 +498,7 @@ static inline bool i10_target_is_admin_queue(struct nvmet_tcp_queue *queue)
 	return queue->nvme_sq.qid == 0;
 }
 
-static inline bool i10_target_is_caravan_full(struct nvmet_tcp_queue *queue))
+static inline bool i10_target_is_caravan_full(struct nvmet_tcp_queue *queue)
 {
 	return (queue->caravan_len >= I10_CARAVAN_CAPACITY) ||
 		(queue->nr_iovs >= I10_TARGET_SEND_BUDGET * 3) ||
