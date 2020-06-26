@@ -60,6 +60,72 @@ static int blk_switch_steering_apps __read_mostly = 0;
 module_param(blk_switch_steering_apps, int, 0644);
 MODULE_PARM_DESC(blk_switch_steering_apps, "blk-switch application steering on/off");
 
+static int blk_switch_reqstr_core __read_mostly = 0;
+module_param(blk_switch_reqstr_core, int, 0644);
+MODULE_PARM_DESC(blk_switch_reqstr_core, "blk-switch request steering core#");
+
+
+struct nvme_tcp_queue {
+	struct socket		*sock;
+	struct work_struct	io_work;
+	int			io_cpu;
+
+	// jaehyun
+        struct work_struct      io_work_lat;
+        int                     prio_class;
+
+        unsigned long           in_flight_bytes;
+        unsigned long           stats_lat_bytes[24];
+        unsigned long           stats_thru_bytes[24];
+        unsigned long           reset_stats;
+
+	spinlock_t		lock;
+	struct list_head	send_list;
+
+	/* recv state */
+	void			*pdu;
+	int			pdu_remaining;
+	int			pdu_offset;
+	size_t			data_remaining;
+	size_t			ddgst_remaining;
+	unsigned int		nr_cqe;
+
+	/* send state */
+	struct nvme_tcp_request *request;
+
+	int			queue_size;
+	size_t			cmnd_capsule_len;
+	struct nvme_tcp_ctrl	*ctrl;
+	unsigned long		flags;
+	bool			rd_enabled;
+
+	bool			hdr_digest;
+	bool			data_digest;
+	struct ahash_request	*rcv_hash;
+	struct ahash_request	*snd_hash;
+	__le32			exp_ddgst;
+	__le32			recv_ddgst;
+
+	/* jaehyun: For i10 caravans */
+	struct kvec		*caravan_iovs;
+	size_t			caravan_len;
+	int			nr_iovs;
+	bool			send_now;
+
+	struct page		**caravan_mapped;
+	int			nr_mapped;
+
+	/* jaehyun: For i10 delayed doorbells */
+	atomic_t		nr_timer;
+	atomic_t		nr_req;
+	struct hrtimer		doorbell_timer;
+
+	struct page_frag_cache	pf_cache;
+
+	void (*state_change)(struct sock *);
+	void (*data_ready)(struct sock *);
+	void (*write_space)(struct sock *);
+};
 
 static void blk_mq_poll_stats_start(struct request_queue *q);
 static void blk_mq_poll_stats_fn(struct blk_stat_callback *cb);
@@ -416,22 +482,32 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	if (blk_switch_steering_requests && data->hctx->blk_switch &&
 		blk_switch_is_thru_request(bio)) {
 		struct blk_mq_hw_ctx *iter_hctx;
+		struct nvme_tcp_queue *driver_queue;
 		unsigned char two_rand[2];
 		int i, two_cpu[2], two_nr[2], target_cpu = -1;
 		bool power_of_two_choices = true;
 
+		if (blk_switch_steering_requests == 3) {
+			target_cpu = blk_switch_reqstr_core;
+			power_of_two_choices = false;
+		}
 		// 1. Find the first queue whose occupancy level
 		//	is less than the aggregation size
-		if (blk_switch_steering_requests == 2) {
+		else if (blk_switch_steering_requests == 2) {
+			int min_nr = 1024;
+
 			for (i = 0; i < nr_cpus/nr_nodes; i++) {
 				two_cpu[0] = i * nr_nodes + data->hctx->numa_node;
 				iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_DEFAULT];
-				two_nr[0] = atomic_read(&iter_hctx->nr_active);
+				//two_nr[0] = atomic_read(&iter_hctx->nr_active);
+				driver_queue = iter_hctx->driver_data;
+				two_nr[0] = blk_switch_aggr - atomic_read(&driver_queue->nr_req);
 
-				if (two_nr[0] < blk_switch_aggr) {
+				if (two_nr[0] > 0 && two_nr[0] < min_nr &&
+					atomic_read(&iter_hctx->nr_active) < blk_switch_aggr) {
 					target_cpu = two_cpu[0];
+					min_nr = two_nr[0];
 					power_of_two_choices = false;
-					break;
 				}
 			}
 		}
@@ -461,6 +537,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		if (data->ctx->cpu != target_cpu) {
 			data->ctx = per_cpu_ptr(q->queue_ctx, target_cpu);
 			data->hctx = blk_mq_map_queue(q, data->cmd_flags, data->ctx);
+			//data->hctx = blk_mq_map_queue(q, data->cmd_flags, per_cpu_ptr(q->queue_ctx, target_cpu));
 		}
 
 		if (blk_switch_printk)
