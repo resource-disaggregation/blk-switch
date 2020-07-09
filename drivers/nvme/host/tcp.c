@@ -101,6 +101,12 @@ struct nvme_tcp_queue {
 	spinlock_t		lock;
 	struct list_head	send_list;
 
+	// jaehyun
+	//spinlock_t		lock_fetch;
+	//atomic_t		producer;
+	//atomic_t		consumer;
+	//struct nvme_tcp_request	*tx[1024];
+
 	/* recv state */
 	void			*pdu;
 	int			pdu_remaining;
@@ -335,7 +341,12 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 		queue->prio_class = 1;
 
 	spin_lock(&queue->lock);
+	//queue->tx[atomic_read(&queue->producer)] = req;
 	list_add_tail(&req->entry, &queue->send_list);
+	//if (atomic_read(&queue->producer) == 1023)
+	//	atomic_set(&queue->producer, 0);
+	//else
+	//	atomic_inc(&queue->producer);
 	spin_unlock(&queue->lock);
 
 	//if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
@@ -402,6 +413,23 @@ nvme_tcp_fetch_request(struct nvme_tcp_queue *queue)
 		list_del(&req->entry);
 	spin_unlock(&queue->lock);
 
+/*
+	spin_lock(&queue->lock_fetch);
+	if (atomic_read(&queue->producer) != atomic_read(&queue->consumer))
+		req = queue->tx[atomic_read(&queue->consumer)];
+	else
+		req = NULL;
+
+	if (req) {
+		queue->tx[atomic_read(&queue->consumer)] = NULL;
+		if (atomic_read(&queue->consumer) == 1023)
+			atomic_set(&queue->consumer, 0);
+		else
+			atomic_inc(&queue->consumer);
+	}
+
+	spin_unlock(&queue->lock_fetch);
+*/
 	return req;
 }
 
@@ -1582,6 +1610,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	queue->ctrl = ctrl;
 	INIT_LIST_HEAD(&queue->send_list);
 	spin_lock_init(&queue->lock);
+	//spin_lock_init(&queue->lock_fetch);
 	INIT_WORK(&queue->io_work, nvme_tcp_io_work);
 	INIT_WORK(&queue->io_work_lat, nvme_tcp_io_work_lat);
 	queue->queue_size = queue_size;
@@ -1605,6 +1634,9 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 		ret = -ENOMEM;
 		goto err_sock;
 	}
+
+	//atomic_set(&queue->producer, 0);
+	//atomic_set(&queue->consumer, 0);
 
 	atomic_set(&queue->nr_timer, 0);
 	queue->nr_iovs = 0;

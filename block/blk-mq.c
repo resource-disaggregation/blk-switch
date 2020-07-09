@@ -48,6 +48,10 @@ static int blk_switch_aggr __read_mostly = 16;
 module_param(blk_switch_aggr, int, 0644);
 MODULE_PARM_DESC(blk_switch_aggr, "i10 aggregation size");
 
+static int blk_switch_appstr_printk __read_mostly = 0;
+module_param(blk_switch_appstr_printk, int, 0644);
+MODULE_PARM_DESC(blk_switch_appstr_printk, "appstr printk on/off");
+
 static int blk_switch_printk __read_mostly = 0;
 module_param(blk_switch_printk, int, 0644);
 MODULE_PARM_DESC(blk_switch_printk, "printk on/off");
@@ -81,6 +85,12 @@ struct nvme_tcp_queue {
 
 	spinlock_t		lock;
 	struct list_head	send_list;
+
+	// jaehyun
+	//spinlock_t              lock_fetch;
+	//atomic_t                producer;
+	//atomic_t                consumer;
+	//struct nvme_tcp_request *tx[1024];
 
 	/* recv state */
 	void			*pdu;
@@ -458,6 +468,11 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 
 	// jaehyun
 	int nr_cpus = num_online_cpus(), nr_nodes = num_online_nodes();
+	bool req_steered, app_steered;
+	struct cpumask *mask;
+
+	req_steered = app_steered = false;
+	mask = kcalloc(1, sizeof(struct cpumask), GFP_KERNEL);
 
 	blk_queue_enter_live(q);
 
@@ -477,10 +492,129 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		data->flags |= BLK_MQ_REQ_NOWAIT;
 
 	/* jaehyun
+	 * Application steering
+	 */
+	if (blk_switch_steering_apps && data->hctx->blk_switch && bio) {
+		struct nvme_tcp_queue *hw_queue = data->hctx->driver_data;
+		struct nvme_tcp_queue *iter_queue;
+		struct blk_mq_hw_ctx *iter_hctx;
+		int iter_cpu, iter_sample1, iter_sample2;
+		unsigned long metric1, metric2, min_metric;
+		int i, target_cpu = -1;
+
+		// 0. Reset avg. queue size
+		if (hw_queue->reset_stats == 0 ||
+			time_after(jiffies, hw_queue->reset_stats)) {
+			for (i = 0; i < nr_cpus; i++) {
+				hw_queue->stats_lat_bytes[i] = 0;
+				hw_queue->stats_thru_bytes[i] = 0;
+			}
+
+			if (blk_switch_appstr_printk) {
+				printk(KERN_ERR "(pid %d cpu %d) - %s - reset ", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru");
+				printk(KERN_ERR "\n");
+			}
+		}
+		hw_queue->reset_stats = jiffies + msecs_to_jiffies(100);
+
+		// 1. Update avg. queue size
+		for (i = 0; i < nr_cpus/nr_nodes; i++) {
+			iter_cpu = i * nr_nodes + data->hctx->numa_node;
+
+			// Update avg. thru-queues
+			iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_DEFAULT];
+			iter_queue = iter_hctx->driver_data;
+			iter_sample1 = iter_queue->in_flight_bytes;
+			if (iter_cpu == data->ctx->cpu && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1)
+				iter_sample1 += bio->bi_iter.bi_size;
+
+			if (hw_queue->stats_thru_bytes[iter_cpu] == 0)
+				hw_queue->stats_thru_bytes[iter_cpu] = iter_sample1;
+			else {
+				hw_queue->stats_thru_bytes[iter_cpu] -= (hw_queue->stats_thru_bytes[iter_cpu] >> 3);
+				hw_queue->stats_thru_bytes[iter_cpu] += (iter_sample1 >> 3);
+			}
+
+			// Update avg. lat-queues
+			iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
+			iter_queue = iter_hctx->driver_data;
+			iter_sample2 = iter_queue->in_flight_bytes;
+			if (iter_cpu == data->ctx->cpu && IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
+				iter_sample2 += bio->bi_iter.bi_size;
+
+			if (hw_queue->stats_lat_bytes[iter_cpu] == 0)
+				hw_queue->stats_lat_bytes[iter_cpu] = iter_sample2;
+			else {
+				hw_queue->stats_lat_bytes[iter_cpu] -= (hw_queue->stats_lat_bytes[iter_cpu] >> 3);
+				hw_queue->stats_lat_bytes[iter_cpu] += (iter_sample2 >> 3);
+			}
+			//printk(KERN_DEBUG "(pid %d cpu %d) i %d iter_cpu %d lat-queue in_flight %lu sample2 %d avg_bytes %lu", current->pid, current->cpu, i, iter_cpu, iter_queue->in_flight_bytes, iter_sample2, hw_queue->stats_lat_bytes[iter_cpu]);
+		}
+
+		// 2. App-steering
+		metric1 = hw_queue->stats_lat_bytes[data->ctx->cpu];
+		metric2 = hw_queue->stats_thru_bytes[data->ctx->cpu];
+		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
+			min_metric = metric1 + metric2;
+		else
+			min_metric = metric1;
+
+		for (i = 0; i < nr_cpus/nr_nodes; i++) {
+			unsigned long iter_metric1, iter_metric2;
+
+			iter_cpu = i * nr_nodes + data->hctx->numa_node;
+			if (iter_cpu == data->ctx->cpu)
+				continue;
+
+			iter_metric1 = hw_queue->stats_lat_bytes[iter_cpu];
+			iter_metric2 = hw_queue->stats_thru_bytes[iter_cpu];
+
+			// app-steering for lat-apps
+			if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1) {
+				iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
+				iter_queue = iter_hctx->driver_data;
+
+				if (iter_queue->in_flight_bytes > 0 &&
+					(metric1 + metric2) > (iter_metric1 + iter_metric2) &&
+					min_metric > (iter_metric1 + iter_metric2)) {
+					target_cpu = iter_cpu;
+					min_metric = iter_metric1 + iter_metric2;
+
+					if (blk_switch_appstr_printk)
+						printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %lu -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, iter_queue->in_flight_bytes, target_cpu);
+				}
+			}
+			// app-steering for thru-apps
+			else {
+				if (min_metric > iter_metric1 &&
+					metric2 > iter_metric2) {
+					target_cpu = iter_cpu;
+					min_metric = iter_metric1;
+
+					if (blk_switch_appstr_printk)
+						printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, target_cpu);
+				}
+			}
+		}
+
+		if (target_cpu >= 0) {
+			cpumask_clear(mask);
+			cpumask_set_cpu(target_cpu, mask);
+			sched_setaffinity(current->pid, mask);
+		}
+
+		if (current->cpu != data->ctx->cpu) {
+			data->ctx = per_cpu_ptr(q->queue_ctx, current->cpu);
+			data->hctx = blk_mq_map_queue(q, data->cmd_flags, data->ctx);
+			app_steered = true;
+		}	
+	}
+
+	/* jaehyun
 	 * Request steering for thru-apps
 	 */
 	if (blk_switch_steering_requests && data->hctx->blk_switch &&
-		blk_switch_is_thru_request(bio)) {
+		blk_switch_is_thru_request(bio) && !app_steered) {
 		struct blk_mq_hw_ctx *iter_hctx;
 		struct nvme_tcp_queue *driver_queue;
 		unsigned char two_rand[2];
@@ -494,7 +628,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		// 1. Find the first queue whose occupancy level
 		//	is less than the aggregation size
 		else if (blk_switch_steering_requests == 2) {
-			int min_nr = 1024;
+			int min_nr = 1024, min_active = 1024, iter_active;
 
 			for (i = 0; i < nr_cpus/nr_nodes; i++) {
 				two_cpu[0] = i * nr_nodes + data->hctx->numa_node;
@@ -502,13 +636,20 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				//two_nr[0] = atomic_read(&iter_hctx->nr_active);
 				driver_queue = iter_hctx->driver_data;
 				two_nr[0] = blk_switch_aggr - atomic_read(&driver_queue->nr_req);
+				iter_active = atomic_read(&iter_hctx->nr_active);
 
-				if (two_nr[0] > 0 && two_nr[0] < min_nr &&
-					atomic_read(&iter_hctx->nr_active) < blk_switch_aggr) {
+				if (two_nr[0] < blk_switch_aggr && two_nr[0] > 0 && two_nr[0] < min_nr) {
+					//atomic_read(&iter_hctx->nr_active) < blk_switch_aggr) {
 					target_cpu = two_cpu[0];
 					min_nr = two_nr[0];
 					power_of_two_choices = false;
 				}
+				else if (min_nr == 1024 && iter_active < min_active) {
+					//iter_active < blk_switch_aggr) {
+					target_cpu = two_cpu[0];
+					min_active = iter_active;
+					power_of_two_choices = false;
+				}					
 			}
 		}
 
@@ -537,7 +678,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		if (data->ctx->cpu != target_cpu) {
 			data->ctx = per_cpu_ptr(q->queue_ctx, target_cpu);
 			data->hctx = blk_mq_map_queue(q, data->cmd_flags, data->ctx);
-			//data->hctx = blk_mq_map_queue(q, data->cmd_flags, per_cpu_ptr(q->queue_ctx, target_cpu));
+			req_steered = true;
 		}
 
 		if (blk_switch_printk)
@@ -569,6 +710,14 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	}
 
 	rq = blk_mq_rq_ctx_init(data, tag, data->cmd_flags, alloc_time_ns);
+
+	// jaehyun: stats for blk-switch
+	if (data->hctx->blk_switch && bio && !req_steered) {
+		struct nvme_tcp_queue *hw_queue = data->hctx->driver_data;
+		hw_queue->in_flight_bytes += bio->bi_iter.bi_size;
+	}
+	rq->steered = req_steered;
+
 	if (!op_is_flush(data->cmd_flags)) {
 		rq->elv.icq = NULL;
 		if (e && e->type->ops.prepare_request) {
@@ -729,6 +878,12 @@ EXPORT_SYMBOL(__blk_mq_end_request);
 
 void blk_mq_end_request(struct request *rq, blk_status_t error)
 {
+	// jaehyun
+	if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) && !rq->steered && rq->tag) {
+		struct nvme_tcp_queue *hw_queue = rq->mq_hctx->driver_data;
+		hw_queue->in_flight_bytes -= blk_rq_bytes(rq);
+	}
+
 	if (blk_update_request(rq, error, blk_rq_bytes(rq)))
 		BUG();
 	__blk_mq_end_request(rq, error);
@@ -2500,6 +2655,19 @@ static int blk_mq_init_hctx(struct request_queue *q,
 	if (set->ops->init_hctx &&
 	    set->ops->init_hctx(hctx, set->driver_data, hctx_idx))
 		goto unregister_cpu_notifier;
+
+	// jaehyun
+	if (hctx->blk_switch) {
+		struct nvme_tcp_queue *hw_queue = hctx->driver_data;
+		int i, nr_cpus = num_online_cpus();
+
+		for (i = 0; i < nr_cpus; i++) {
+			hw_queue->stats_lat_bytes[i] = 0;
+			hw_queue->stats_thru_bytes[i] = 0;
+		}
+		hw_queue->in_flight_bytes = 0;
+		hw_queue->reset_stats = 0;
+	}
 
 	if (blk_mq_init_request(set, hctx->fq->flush_rq, hctx_idx,
 				hctx->numa_node))
