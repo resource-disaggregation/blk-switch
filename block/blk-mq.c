@@ -500,6 +500,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		struct blk_mq_hw_ctx *iter_hctx;
 		int iter_cpu, iter_sample1, iter_sample2;
 		unsigned long metric1, metric2, min_metric;
+		unsigned long iter_metric1, iter_metric2;
 		int i, target_cpu = -1;
 
 		// 0. Reset avg. queue size
@@ -548,7 +549,8 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				hw_queue->stats_lat_bytes[iter_cpu] -= (hw_queue->stats_lat_bytes[iter_cpu] >> 3);
 				hw_queue->stats_lat_bytes[iter_cpu] += (iter_sample2 >> 3);
 			}
-			//printk(KERN_DEBUG "(pid %d cpu %d) i %d iter_cpu %d lat-queue in_flight %lu sample2 %d avg_bytes %lu", current->pid, current->cpu, i, iter_cpu, iter_queue->in_flight_bytes, iter_sample2, hw_queue->stats_lat_bytes[iter_cpu]);
+			//if (blk_switch_appstr_printk)
+			//	printk(KERN_DEBUG "(pid %d cpu %d) i %d iter_cpu %d lat nr_active %d (user %d) in_flight %lu sample2 %d avg_bytes %lu", current->pid, current->cpu, i, iter_cpu, atomic_read(&iter_hctx->nr_active), atomic_read(&iter_hctx->tags->active_queues), iter_queue->in_flight_bytes, iter_sample2, hw_queue->stats_lat_bytes[iter_cpu]);
 		}
 
 		// 2. App-steering
@@ -560,8 +562,6 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			min_metric = metric1;
 
 		for (i = 0; i < nr_cpus/nr_nodes; i++) {
-			unsigned long iter_metric1, iter_metric2;
-
 			iter_cpu = i * nr_nodes + data->hctx->numa_node;
 			if (iter_cpu == data->ctx->cpu)
 				continue;
@@ -574,14 +574,11 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
 				iter_queue = iter_hctx->driver_data;
 
-				if (iter_queue->in_flight_bytes > 0 &&
+				if (metric2 > 0 && iter_queue->in_flight_bytes > 0 &&
 					(metric1 + metric2) > (iter_metric1 + iter_metric2) &&
 					min_metric > (iter_metric1 + iter_metric2)) {
 					target_cpu = iter_cpu;
 					min_metric = iter_metric1 + iter_metric2;
-
-					if (blk_switch_appstr_printk)
-						printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %lu -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, iter_queue->in_flight_bytes, target_cpu);
 				}
 			}
 			// app-steering for thru-apps
@@ -590,14 +587,36 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 					metric2 > iter_metric2) {
 					target_cpu = iter_cpu;
 					min_metric = iter_metric1;
-
-					if (blk_switch_appstr_printk)
-						printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, target_cpu);
 				}
 			}
 		}
 
 		if (target_cpu >= 0) {
+			if (blk_switch_appstr_printk) {
+				iter_metric1 = hw_queue->stats_lat_bytes[target_cpu];
+				iter_metric2 = hw_queue->stats_thru_bytes[target_cpu];
+
+				if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
+					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %d -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, atomic_read(&data->hctx->tags->active_queues), target_cpu);
+				else
+					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, target_cpu);
+			}
+
+			if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 &&
+				atomic_read(&data->hctx->tags->active_queues) <= 1) {
+				for (i = 0; i < nr_cpus/nr_nodes; i++) {
+					iter_cpu = i * nr_nodes + data->hctx->numa_node;
+
+					iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_DEFAULT];
+					iter_queue = iter_hctx->driver_data;
+					iter_queue->stats_lat_bytes[data->ctx->cpu] = 0;
+
+					iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
+					iter_queue = iter_hctx->driver_data;
+					iter_queue->stats_lat_bytes[data->ctx->cpu] = 0;
+				}
+			}
+
 			cpumask_clear(mask);
 			cpumask_set_cpu(target_cpu, mask);
 			sched_setaffinity(current->pid, mask);
