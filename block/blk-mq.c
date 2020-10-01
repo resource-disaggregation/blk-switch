@@ -626,33 +626,31 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 
 		// 1. Find the first queue whose occupancy level
 		//	is less than the aggregation size
-		if (blk_switch_steering_requests == 2) {
-			int min_nr = 1024, min_active = 2048, iter_active;
+		int min_nr = 1024, min_active = 2048, iter_active;
 
-			for (i = 0; i < nr_cpus/nr_nodes; i++) {
-				two_cpu[0] = i * nr_nodes + data->hctx->numa_node;
-				iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_DEFAULT];
-				iter_active = atomic_read(&iter_hctx->nr_active);
-				driver_queue = iter_hctx->driver_data;
-				two_nr[0] = blk_switch_aggr - atomic_read(&driver_queue->nr_req);
+		for (i = 0; i < nr_cpus/nr_nodes; i++) {
+			two_cpu[0] = i * nr_nodes + data->hctx->numa_node;
+			iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_DEFAULT];
+			iter_active = atomic_read(&iter_hctx->nr_active);
+			driver_queue = iter_hctx->driver_data;
+			two_nr[0] = blk_switch_aggr - atomic_read(&driver_queue->nr_req);
 
-				iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_READ];
-				iter_active += atomic_read(&iter_hctx->nr_active);
+			iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_READ];
+			iter_active += atomic_read(&iter_hctx->nr_active);
 
-				if (two_nr[0] < blk_switch_aggr && two_nr[0] > 0 && two_nr[0] < min_nr) {
-					target_cpu = two_cpu[0];
-					min_nr = two_nr[0];
-					power_of_two_choices = false;
-				}
-				else if (min_nr == 1024 && iter_active < min_active) {
-					target_cpu = two_cpu[0];
-					min_active = iter_active;
-					power_of_two_choices = false;
-				}					
+			if (two_nr[0] < blk_switch_aggr && two_nr[0] > 0 && two_nr[0] < min_nr) {
+				target_cpu = two_cpu[0];
+				min_nr = two_nr[0];
+				power_of_two_choices = false;
 			}
+			else if (min_nr == 1024 && iter_active < min_active) {
+				target_cpu = two_cpu[0];
+				min_active = iter_active;
+				power_of_two_choices = false;
+			}					
 		}
 
-		// 2. Power of two choices
+		// 2. Power of two choices if target core is not chosen yet
 		if (power_of_two_choices) {
 			get_random_bytes(&two_rand[0], 1);
 			two_rand[0] %= nr_cpus / nr_nodes;
