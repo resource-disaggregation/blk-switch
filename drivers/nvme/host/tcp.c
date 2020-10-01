@@ -22,26 +22,29 @@
 #include "nvme.h"
 #include "fabrics.h"
 
-// jaehyun
 #define I10_CARAVAN_CAPACITY		65536
-#define I10_AGGREGATION_SIZE		16
+#define I10_MAX_AGGREGATION_SIZE	32
 #define I10_MIN_DOORBELL_TIMEOUT	25
 
-static int i10_aggregation_size __read_mostly = 16;
-module_param(i10_aggregation_size, int, 0644);
-MODULE_PARM_DESC(i10_aggregation_size, "i10 aggregation size");
+static int i10_thru_aggr __read_mostly = 16;
+module_param(i10_thru_aggr, int, 0644);
+MODULE_PARM_DESC(i10_thru_aggr, "i10 aggregation size for thru");
 
-static int i10_delayed_doorbell_us __read_mostly = 50;
-module_param(i10_delayed_doorbell_us, int, 0644);
-MODULE_PARM_DESC(i10_delayed_doorbell_us, "i10 delayed doorbell timer (us)");
+static int i10_thru_doorbell __read_mostly = 50;
+module_param(i10_thru_doorbell, int, 0644);
+MODULE_PARM_DESC(i10_thru_doorbell, "i10 delayed doorbell timer (us) for thru");
 
-static int i10_steering_core __read_mostly = -1;
-module_param(i10_steering_core, int, 0644);
-MODULE_PARM_DESC(i10_steering_core, "i10 delayed doorbell timer (us)");
+static int i10_lat_aggr __read_mostly = 0;
+module_param(i10_lat_aggr, int, 0644);
+MODULE_PARM_DESC(i10_lat_aggr, "i10 aggregation size for lat");
 
-static int i10_printk_core __read_mostly = -1;
-module_param(i10_printk_core, int, 0644);
-MODULE_PARM_DESC(i10_printk_core, "i10 delayed doorbell timer (us)");
+static int i10_lat_doorbell __read_mostly = 50;
+module_param(i10_lat_doorbell, int, 0644);
+MODULE_PARM_DESC(i10_lat_doorbell, "i10 delayed doorbell timer (us) for lat");
+
+static int i10_thru_nice __read_mostly = 0;
+module_param(i10_thru_nice, int, 0644);
+MODULE_PARM_DESC(i10_thru_nice, "i10 thru kthread nice");
 
 struct nvme_tcp_queue;
 
@@ -89,23 +92,13 @@ struct nvme_tcp_queue {
 	struct work_struct	io_work;
 	int			io_cpu;
 
-	// jaehyun
+	/* for blk-switch */
         struct work_struct      io_work_lat;
         int                     prio_class;
-
         unsigned long           in_flight_bytes;
-        unsigned long           stats_lat_bytes[24];
-        unsigned long           stats_thru_bytes[24];
-        unsigned long           reset_stats;
 
 	spinlock_t		lock;
 	struct list_head	send_list;
-
-	// jaehyun
-	//spinlock_t		lock_fetch;
-	//atomic_t		producer;
-	//atomic_t		consumer;
-	//struct nvme_tcp_request	*tx[1024];
 
 	/* recv state */
 	void			*pdu;
@@ -315,9 +308,20 @@ static inline bool i10_host_is_latency(struct nvme_tcp_queue *queue)
 
 static inline bool i10_host_legacy_path(struct nvme_tcp_request *req)
 {
+	struct nvme_tcp_queue *queue = req->queue;
+	int delayed_doorbell, aggregation_size;
+
+	if (i10_host_is_latency(queue)) {
+		delayed_doorbell = i10_lat_doorbell;
+		aggregation_size = i10_lat_aggr;
+	} else {
+		delayed_doorbell = i10_thru_doorbell;
+		aggregation_size = i10_thru_doorbell;
+	}
+
 	return (nvme_tcp_queue_id(req->queue) == 0) ||
-		(i10_delayed_doorbell_us < I10_MIN_DOORBELL_TIMEOUT) ||
-		(i10_aggregation_size == 0);
+		((delayed_doorbell < I10_MIN_DOORBELL_TIMEOUT) ||
+		(aggregation_size == 0));
 }
 
 #define I10_ALLOWED_FLAGS (REQ_OP_READ | REQ_OP_WRITE | REQ_DRV | \
@@ -326,11 +330,10 @@ static inline bool i10_host_legacy_path(struct nvme_tcp_request *req)
 static bool i10_host_is_nodelay_path(struct nvme_tcp_request *req)
 {
 	return (req->curr_bio == NULL) ||
-		(req->curr_bio->bi_opf & ~I10_ALLOWED_FLAGS) ||
-		i10_host_is_latency(req->queue);
+		(req->curr_bio->bi_opf & ~I10_ALLOWED_FLAGS);
 }
 
-// jaehyun
+/* blk-switch: i10 implementation */
 static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 {
 	struct nvme_tcp_queue *queue = req->queue;
@@ -341,63 +344,59 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 		queue->prio_class = 1;
 
 	spin_lock(&queue->lock);
-	//queue->tx[atomic_read(&queue->producer)] = req;
 	list_add_tail(&req->entry, &queue->send_list);
-	//if (atomic_read(&queue->producer) == 1023)
-	//	atomic_set(&queue->producer, 0);
-	//else
-	//	atomic_inc(&queue->producer);
 	spin_unlock(&queue->lock);
 
-	//if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
-	//	printk(KERN_DEBUG "(pid %d cpu %d): Enqueue! qid %d io_cpu %d tag %d", current->pid, current->cpu, nvme_tcp_queue_id(queue), queue->io_cpu, blk_mq_rq_from_pdu(req)->tag);
-
-	if (i10_printk_core >= 0 && current->cpu == i10_printk_core) {
-		if (req->curr_bio)
-			printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d opf %u flags %u q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), req->curr_bio->bi_opf, req->curr_bio->bi_flags, queue->prio_class);
-		else
-			printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d bio null q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), queue->prio_class);
-	}
-
-	//if (queue->doorbell_expire && queue->nr_req) {
-	//	if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
-	//		printk(KERN_DEBUG "(pid %d cpu %d): Enqueue but expired! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, queue->nr_req, nvme_tcp_queue_id(queue), queue->io_cpu);
-	//	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
-	//}
 	if (!i10_host_legacy_path(req) && !i10_host_is_nodelay_path(req)) {
+		int delayed_doorbell, aggregation_size;
+
+		if (i10_host_is_latency(queue)) {
+			delayed_doorbell = i10_lat_doorbell;
+			aggregation_size = i10_lat_aggr;
+		} else {
+			delayed_doorbell = i10_thru_doorbell;
+			aggregation_size = i10_thru_doorbell;
+		}
+
 		atomic_inc(&queue->nr_req);
 
 		if (!hrtimer_active(&queue->doorbell_timer) && !atomic_read(&queue->nr_timer)) {
 			hrtimer_start(&queue->doorbell_timer,
-				ns_to_ktime(i10_delayed_doorbell_us * NSEC_PER_USEC),
+				ns_to_ktime(delayed_doorbell * NSEC_PER_USEC),
 				HRTIMER_MODE_REL);
 			atomic_inc(&queue->nr_timer);
+
+			//if (i10_host_is_latency(queue))
+			//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d tag %d\
+			//			-> RESET NEW DOORBELL!!", current->pid, current->cpu,
+			//		task_nice(current), atomic_read(&queue->nr_req),
+			//		blk_mq_rq_from_pdu(req)->tag);
 		}
-		else if (atomic_read(&queue->nr_req) >= i10_aggregation_size) {
-			if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
-				printk(KERN_DEBUG "(pid %d cpu %d): Ring! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, atomic_read(&queue->nr_req), nvme_tcp_queue_id(queue), queue->io_cpu);
+		if (atomic_read(&queue->nr_req) >= aggregation_size) {
 			if (hrtimer_active(&queue->doorbell_timer))	
 				hrtimer_cancel(&queue->doorbell_timer);
-			if (i10_steering_core >= 0)
-				queue_work_on(i10_steering_core, nvme_tcp_wq, &queue->io_work);
+
+			if (i10_host_is_latency(queue)) {
+				//printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d\
+				//		-> RING DOORBELL!!", current->pid, current->cpu,
+				//	task_nice(current), atomic_read(&queue->nr_req));
+				queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
+			}
 			else
 				queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 		}
 	}
 	else {
-		if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
-			printk(KERN_DEBUG "(pid %d cpu %d): Nodelay! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, atomic_read(&queue->nr_req), nvme_tcp_queue_id(queue), queue->io_cpu);
 		if (hrtimer_active(&queue->doorbell_timer))
 			hrtimer_cancel(&queue->doorbell_timer);
 
-		if (i10_host_is_latency(queue))
+		if (i10_host_is_latency(queue)) {
+			//printk(KERN_DEBUG "(pid %d cpu %d nice %d): NO-DELAY PATH!!",
+			//	current->pid, current->cpu, task_nice(current));
 			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
-		else {
-			if (i10_steering_core >= 0)
-				queue_work_on(i10_steering_core, nvme_tcp_wq, &queue->io_work);
-			else
-				queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 		}
+		else
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 	}
 }
 
@@ -413,23 +412,6 @@ nvme_tcp_fetch_request(struct nvme_tcp_queue *queue)
 		list_del(&req->entry);
 	spin_unlock(&queue->lock);
 
-/*
-	spin_lock(&queue->lock_fetch);
-	if (atomic_read(&queue->producer) != atomic_read(&queue->consumer))
-		req = queue->tx[atomic_read(&queue->consumer)];
-	else
-		req = NULL;
-
-	if (req) {
-		queue->tx[atomic_read(&queue->consumer)] = NULL;
-		if (atomic_read(&queue->consumer) == 1023)
-			atomic_set(&queue->consumer, 0);
-		else
-			atomic_inc(&queue->consumer);
-	}
-
-	spin_unlock(&queue->lock_fetch);
-*/
 	return req;
 }
 
@@ -608,6 +590,13 @@ static int nvme_tcp_handle_c2h_data(struct nvme_tcp_queue *queue,
 		struct nvme_tcp_data_pdu *pdu)
 {
 	struct request *rq;
+
+	// jaehyun
+	//if (i10_host_is_latency(queue))
+	//	printk(KERN_DEBUG "(pid %d cpu %d nice %d):\
+	//			handle c2h_data pdu id %u -> RX rsp pdu!!",
+	//		current->pid, current->cpu, task_nice(current),
+	//		pdu->command_id);
 
 	rq = blk_mq_tag_to_rq(nvme_tcp_tagset(queue), pdu->command_id);
 	if (!rq) {
@@ -949,14 +938,15 @@ static void nvme_tcp_data_ready(struct sock *sk)
 	queue = sk->sk_user_data;
 	if (likely(queue && queue->rd_enabled)) {
 		// jaehyun
-		if (i10_host_is_latency(queue))
+		if (i10_host_is_latency(queue)) {
+			//printk(KERN_DEBUG "(pid %d cpu %d nice %d):\
+			//		RX -> q_rq req_count %d -> data ready!!",
+			//	current->pid, current->cpu, task_nice(current),
+			//	atomic_read(&queue->nr_req));
 			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
-		else {
-			if (i10_steering_core >= 0)
-				queue_work_on(i10_steering_core, nvme_tcp_wq, &queue->io_work);
-			else
-				queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 		}
+		else
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 	}
 	read_unlock(&sk->sk_callback_lock);
 }
@@ -972,12 +962,8 @@ static void nvme_tcp_write_space(struct sock *sk)
 		// jaehyun
 		if (i10_host_is_latency(queue))
 			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
-		else {
-			if (i10_steering_core >= 0)
-				queue_work_on(i10_steering_core, nvme_tcp_wq, &queue->io_work);
-			else
-				queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
-		}
+		else
+			queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 	}
 	read_unlock_bh(&sk->sk_callback_lock);
 }
@@ -1021,12 +1007,12 @@ static void nvme_tcp_fail_request(struct nvme_tcp_request *req)
 	nvme_tcp_end_request(blk_mq_rq_from_pdu(req), NVME_SC_HOST_PATH_ERROR);
 }
 
-/* jaehyun */
+/* i10: jaehyun */
 static inline bool i10_host_is_caravan_full(struct nvme_tcp_queue *queue)
 {
 	return (queue->caravan_len >= I10_CARAVAN_CAPACITY) ||
-		(queue->nr_iovs >= I10_AGGREGATION_SIZE * 2) ||
-		(queue->nr_mapped >= I10_AGGREGATION_SIZE);
+		(queue->nr_iovs >= I10_MAX_AGGREGATION_SIZE * 2) ||
+		(queue->nr_mapped >= I10_MAX_AGGREGATION_SIZE);
 }
 
 static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
@@ -1045,7 +1031,7 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 		else
 			flags |= MSG_MORE;
 
-		/* jaehyun */
+		/* i10: jaehyun */
 		if (i10_host_legacy_path(req)) {
 			/* can't zcopy slab pages */
 			if (unlikely(PageSlab(page))) {
@@ -1107,7 +1093,7 @@ static int nvme_tcp_try_send_cmd_pdu(struct nvme_tcp_request *req)
 	if (queue->hdr_digest && !req->offset)
 		nvme_tcp_hdgst(queue->snd_hash, pdu, sizeof(*pdu));
 
-	/* jaehyun */
+	/* i10: jaehyun */
 	if (i10_host_legacy_path(req))
 		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,  flags);
@@ -1158,7 +1144,7 @@ static int nvme_tcp_try_send_data_pdu(struct nvme_tcp_request *req)
 	if (queue->hdr_digest && !req->offset)
 		nvme_tcp_hdgst(queue->snd_hash, pdu, sizeof(*pdu));
 
-	/* jaehyun */
+	/* i10: jaehyun */
 	if (i10_host_legacy_path(req))
 		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,
@@ -1216,7 +1202,7 @@ static int nvme_tcp_try_send_ddgst(struct nvme_tcp_request *req)
 	return -EAGAIN;
 }
 
-/* jaehyun: to check if there's enough room in tcp_sndbuf */
+/* i10: to check if there's enough room in tcp_sndbuf */
 static inline int nvme_tcp_sndbuf_nospace(struct nvme_tcp_queue *queue,
 		int length)
 {
@@ -1245,7 +1231,7 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 			return 0;
 	}
 
-	/* jaehyun: pdu aggregation */
+	/* i10: pdu aggregation */
 	if (i10_host_send_caravan(queue)) {
 		struct msghdr msg = { .msg_flags = MSG_DONTWAIT | MSG_EOR };
 		int i, i10_ret;
@@ -1255,8 +1241,11 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 			return 0;
 		}
 
-		if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
-			printk(KERN_DEBUG "(pid %d cpu %d) send caravan: len %lu nr_iovs %d nr_mapped %d send_now %s", current->pid, current->cpu, queue->caravan_len, queue->nr_iovs, queue->nr_mapped, queue->send_now ? "true":"false");
+		//if (i10_host_is_latency(queue))
+		//	printk(KERN_DEBUG "(pid %d cpu %d nice %d):\
+		//			q_rq req_count %d -> sendmsg is called!!",
+		//	current->pid, current->cpu, task_nice(current),
+		//	atomic_read(&queue->nr_req));
 
 		i10_ret = kernel_sendmsg(queue->sock, &msg,
 				queue->caravan_iovs,
@@ -1327,27 +1316,35 @@ static int nvme_tcp_try_recv(struct nvme_tcp_queue *queue)
 	return consumed;
 }
 
-/* jaehyun */
+/* i10: jaehyun */
 enum hrtimer_restart i10_host_doorbell_timeout(struct hrtimer *timer)
 {
 	struct nvme_tcp_queue *queue =
 		container_of(timer, struct nvme_tcp_queue, doorbell_timer);
 
-	if (i10_printk_core >= 0 && current->cpu == i10_printk_core)
-		printk(KERN_DEBUG "(pid %d cpu %d): Timeout! q_rq nr_req %d -> qid: %d -> core %d", current->pid, current->cpu, atomic_read(&queue->nr_req), nvme_tcp_queue_id(queue), queue->io_cpu);
-
-	if (i10_steering_core >= 0)
-		queue_work_on(i10_steering_core, nvme_tcp_wq, &queue->io_work);
+	if (i10_host_is_latency(queue)) {
+		//printk(KERN_DEBUG "(pid %d cpu %d nice %d): TIMEOUT!!",
+		//	current->pid, current->cpu, task_nice(current));
+		queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
+	}
 	else
 		queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 	return HRTIMER_NORESTART;
 }
 
+/* blk-switch: io_work for thru-requests */
 static void nvme_tcp_io_work(struct work_struct *w)
 {
 	struct nvme_tcp_queue *queue =
 		container_of(w, struct nvme_tcp_queue, io_work);
 	unsigned long deadline = jiffies + msecs_to_jiffies(1);
+
+	/* blk-switch: set thru kthread's nice value */
+	if (task_nice(current) != i10_thru_nice) {
+		set_user_nice(current, i10_thru_nice);
+		printk(KERN_DEBUG "(pid %d cpu %d nice %d): thru kthread -> set nice to %d",
+			current->pid, current->cpu, task_nice(current), i10_thru_nice);
+	}
 
 	do {
 		bool pending = false;
@@ -1379,13 +1376,10 @@ static void nvme_tcp_io_work(struct work_struct *w)
 
 	} while (!time_after(jiffies, deadline)); /* quota is exhausted */
 
-	if (i10_steering_core >= 0)
-		queue_work_on(i10_steering_core, nvme_tcp_wq, &queue->io_work);
-	else
-		queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
+	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 }
 
-/* jaehyun */
+/* blk-switch: io_work_lat for lat-requests */
 static void nvme_tcp_io_work_lat(struct work_struct *w)
 {
 	struct nvme_tcp_queue *queue =
@@ -1496,6 +1490,7 @@ static void nvme_tcp_free_queue(struct nvme_ctrl *nctrl, int qid)
 
 	sock_release(queue->sock);
 	kfree(queue->pdu);
+	/* i10 */
 	kfree(queue->caravan_iovs);
 	kfree(queue->caravan_mapped);
 	hrtimer_cancel(&queue->doorbell_timer);
@@ -1610,7 +1605,6 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	queue->ctrl = ctrl;
 	INIT_LIST_HEAD(&queue->send_list);
 	spin_lock_init(&queue->lock);
-	//spin_lock_init(&queue->lock_fetch);
 	INIT_WORK(&queue->io_work, nvme_tcp_io_work);
 	INIT_WORK(&queue->io_work_lat, nvme_tcp_io_work_lat);
 	queue->queue_size = queue_size;
@@ -1621,22 +1615,19 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 		queue->cmnd_capsule_len = sizeof(struct nvme_command) +
 						NVME_TCP_ADMIN_CCSZ;
 
-	/* jaehyun: alloc for pdu aggregation */
-	queue->caravan_iovs = kcalloc(I10_AGGREGATION_SIZE * 2,
+	/* i10: alloc for pdu aggregation */
+	queue->caravan_iovs = kcalloc(I10_MAX_AGGREGATION_SIZE * 2,
 				sizeof(*queue->caravan_iovs), GFP_KERNEL);
 	if (!queue->caravan_iovs) {
 		ret = -ENOMEM;
 		goto err_sock;
 	}
-	queue->caravan_mapped = kcalloc(I10_AGGREGATION_SIZE,
+	queue->caravan_mapped = kcalloc(I10_MAX_AGGREGATION_SIZE,
 				sizeof(**queue->caravan_mapped), GFP_KERNEL);
 	if (!queue->caravan_mapped) {
 		ret = -ENOMEM;
 		goto err_sock;
 	}
-
-	//atomic_set(&queue->producer, 0);
-	//atomic_set(&queue->consumer, 0);
 
 	atomic_set(&queue->nr_timer, 0);
 	queue->nr_iovs = 0;
@@ -1676,7 +1667,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 		goto err_sock;
 	}
 
-	/* jaehyun: Set a large sndbuf/rcvbuf */
+	/* i10: Set a large sndbuf/rcvbuf */
 	opt = 8388608;
 	ret = kernel_setsockopt(queue->sock, SOL_SOCKET, SO_SNDBUFFORCE,
 		(char *)&opt, sizeof(opt));
@@ -1826,7 +1817,7 @@ static void __nvme_tcp_stop_queue(struct nvme_tcp_queue *queue)
 	kernel_sock_shutdown(queue->sock, SHUT_RDWR);
 	nvme_tcp_restore_sock_calls(queue);
 	cancel_work_sync(&queue->io_work);
-	// jaehyun
+	/* i10 */
 	cancel_work_sync(&queue->io_work_lat);
 }
 
@@ -2797,12 +2788,13 @@ static struct nvmf_transport_ops nvme_tcp_transport = {
 
 static int __init nvme_tcp_init_module(void)
 {
+	/* blk-switch: workqueue for thru-apps */
 	nvme_tcp_wq = alloc_workqueue("nvme_tcp_wq",
 			WQ_MEM_RECLAIM, 0);
-//			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 	if (!nvme_tcp_wq)
 		return -ENOMEM;
 
+	/* blk-switch: workqueue for lat-apps */
 	nvme_tcp_wq_lat = alloc_workqueue("nvme_tcp_wq_lat",
 			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 	if (!nvme_tcp_wq_lat)

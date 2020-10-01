@@ -5,7 +5,7 @@
 #include "blk-stat.h"
 #include "blk-mq-tag.h"
 
-// jaehyun
+/* blk-switch: to get task's ioprio */
 #include <linux/sched/task.h>
 
 struct blk_mq_tag_set;
@@ -38,6 +38,11 @@ struct blk_mq_ctx {
 	struct request_queue	*queue;
 	struct blk_mq_ctxs      *ctxs;
 	struct kobject		kobj;
+
+	/* blk-switch: metrics for app-steering */
+	unsigned long		metric_lat;
+	unsigned long		metric_thru;
+	unsigned long		reset_metrics;
 } ____cacheline_aligned_in_smp;
 
 void blk_mq_exit_queue(struct request_queue *q);
@@ -97,7 +102,7 @@ static inline struct blk_mq_hw_ctx *blk_mq_map_queue_type(struct request_queue *
 	return q->queue_hw_ctx[q->tag_set->map[type].mq_map[cpu]];
 }
 
-/* jaehyun */
+/* For blk-switch */
 static int get_task_ioprio(struct task_struct *p)
 {
 	int ret;
@@ -123,7 +128,7 @@ static inline struct blk_mq_hw_ctx *blk_mq_map_queue(struct request_queue *q,
 {
 	enum hctx_type type = HCTX_TYPE_DEFAULT;
 
-	// jaehyun
+	// blk-switch
 	int ioprio = get_task_ioprio(current);
 
 	/*
@@ -133,6 +138,7 @@ static inline struct blk_mq_hw_ctx *blk_mq_map_queue(struct request_queue *q,
 		type = HCTX_TYPE_POLL;
 	//else if ((flags & REQ_OP_MASK) == REQ_OP_READ)
 	//	type = HCTX_TYPE_READ;
+	/* blk-switch: type for latency-sensitive apps */
 	else if (IOPRIO_PRIO_CLASS(ioprio) == 1)
 		type = HCTX_TYPE_READ;	
 

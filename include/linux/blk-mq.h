@@ -37,7 +37,7 @@ struct blk_mq_hw_ctx {
 	struct blk_mq_ctx	*dispatch_from;
 	unsigned int		dispatch_busy;
 
-	// jaehyun
+	/* blk-switch */
 	bool			blk_switch;
 
 	unsigned short		type;

@@ -140,7 +140,7 @@ struct request {
 	int tag;
 	int internal_tag;
 
-	// jaehyun
+	/* blk-switch: 'y' if req is steered */
 	bool steered;
 
 	/* the following two fields are internal, NEVER access directly */

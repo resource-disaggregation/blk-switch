@@ -40,7 +40,7 @@
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 
-// jaehyun
+/* blk-switch: for req/app-steering */
 #include <linux/random.h>
 #include <linux/sched/task.h>
 
@@ -52,10 +52,6 @@ static int blk_switch_appstr_printk __read_mostly = 0;
 module_param(blk_switch_appstr_printk, int, 0644);
 MODULE_PARM_DESC(blk_switch_appstr_printk, "appstr printk on/off");
 
-static int blk_switch_printk __read_mostly = 0;
-module_param(blk_switch_printk, int, 0644);
-MODULE_PARM_DESC(blk_switch_printk, "printk on/off");
-
 static int blk_switch_steering_requests __read_mostly = 0;
 module_param(blk_switch_steering_requests, int, 0644);
 MODULE_PARM_DESC(blk_switch_steering_requests, "blk-switch request steering on/off");
@@ -64,33 +60,17 @@ static int blk_switch_steering_apps __read_mostly = 0;
 module_param(blk_switch_steering_apps, int, 0644);
 MODULE_PARM_DESC(blk_switch_steering_apps, "blk-switch application steering on/off");
 
-static int blk_switch_reqstr_core __read_mostly = 0;
-module_param(blk_switch_reqstr_core, int, 0644);
-MODULE_PARM_DESC(blk_switch_reqstr_core, "blk-switch request steering core#");
-
-
 struct nvme_tcp_queue {
 	struct socket		*sock;
 	struct work_struct	io_work;
 	int			io_cpu;
 
-	// jaehyun
         struct work_struct      io_work_lat;
         int                     prio_class;
-
         unsigned long           in_flight_bytes;
-        unsigned long           stats_lat_bytes[24];
-        unsigned long           stats_thru_bytes[24];
-        unsigned long           reset_stats;
 
 	spinlock_t		lock;
 	struct list_head	send_list;
-
-	// jaehyun
-	//spinlock_t              lock_fetch;
-	//atomic_t                producer;
-	//atomic_t                consumer;
-	//struct nvme_tcp_request *tx[1024];
 
 	/* recv state */
 	void			*pdu;
@@ -450,7 +430,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	return rq;
 }
 
-/* jaehyun */
+/* For blk-switch */
 static bool blk_switch_is_thru_request(struct bio *bio)
 {
 	return (bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1);
@@ -466,13 +446,10 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	bool clear_ctx_on_error = false;
 	u64 alloc_time_ns = 0;
 
-	// jaehyun
+	/* blk-switch */
 	int nr_cpus = num_online_cpus(), nr_nodes = num_online_nodes();
 	bool req_steered, app_steered;
-	struct cpumask *mask;
-
 	req_steered = app_steered = false;
-	mask = kcalloc(1, sizeof(struct cpumask), GFP_KERNEL);
 
 	blk_queue_enter_live(q);
 
@@ -491,71 +468,72 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	if (data->cmd_flags & REQ_NOWAIT)
 		data->flags |= BLK_MQ_REQ_NOWAIT;
 
-	/* jaehyun
-	 * Application steering
+	/* blk-switch:
+	 * application steering
 	 */
 	if (blk_switch_steering_apps && data->hctx->blk_switch && bio) {
-		struct nvme_tcp_queue *hw_queue = data->hctx->driver_data;
+		struct nvme_tcp_queue *hw_queue_lat =
+			data->ctx->hctxs[HCTX_TYPE_READ]->driver_data;
+		struct nvme_tcp_queue *hw_queue_thru =
+			data->ctx->hctxs[HCTX_TYPE_DEFAULT]->driver_data;
+		struct blk_mq_ctx *iter_ctx;
+		int sample;
+
 		struct nvme_tcp_queue *iter_queue;
-		struct blk_mq_hw_ctx *iter_hctx;
-		int iter_cpu, iter_sample1, iter_sample2;
 		unsigned long metric1, metric2, min_metric;
 		unsigned long iter_metric1, iter_metric2;
-		int i, target_cpu = -1;
+		int i, iter_cpu, target_cpu = -1;
 
-		// 0. Reset avg. queue size
-		if (hw_queue->reset_stats == 0 ||
-			time_after(jiffies, hw_queue->reset_stats)) {
-			for (i = 0; i < nr_cpus; i++) {
-				hw_queue->stats_lat_bytes[i] = 0;
-				hw_queue->stats_thru_bytes[i] = 0;
-			}
+		/* 0. Reset metrics if apps are idle for 100ms*/
+		if (data->ctx->reset_metrics == 0 ||
+			time_after(jiffies, data->ctx->reset_metrics)) {
+			data->ctx->metric_lat = 0;
+			data->ctx->metric_thru = 0;
 
 			if (blk_switch_appstr_printk) {
-				printk(KERN_ERR "(pid %d cpu %d) - %s - reset ", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru");
+				printk(KERN_ERR "(pid %d cpu %d) ctx[%u] receives a request(%s)\
+						-> reset metrics! (lat %u min %u)",
+					current->pid, current->cpu, data->ctx->cpu,
+					IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
+					sysctl_sched_latency, sysctl_sched_min_granularity);
 				printk(KERN_ERR "\n");
 			}
 		}
-		hw_queue->reset_stats = jiffies + msecs_to_jiffies(100);
+		data->ctx->reset_metrics = jiffies + msecs_to_jiffies(100);
 
-		// 1. Update avg. queue size
-		for (i = 0; i < nr_cpus/nr_nodes; i++) {
-			iter_cpu = i * nr_nodes + data->hctx->numa_node;
+		/* 1-1. Update metric_thru */
+		sample = hw_queue_thru->in_flight_bytes;
+		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1)
+			sample += bio->bi_iter.bi_size;
 
-			// Update avg. thru-queues
-			iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_DEFAULT];
-			iter_queue = iter_hctx->driver_data;
-			iter_sample1 = iter_queue->in_flight_bytes;
-			if (iter_cpu == data->ctx->cpu && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1)
-				iter_sample1 += bio->bi_iter.bi_size;
-
-			if (hw_queue->stats_thru_bytes[iter_cpu] == 0)
-				hw_queue->stats_thru_bytes[iter_cpu] = iter_sample1;
-			else {
-				hw_queue->stats_thru_bytes[iter_cpu] -= (hw_queue->stats_thru_bytes[iter_cpu] >> 3);
-				hw_queue->stats_thru_bytes[iter_cpu] += (iter_sample1 >> 3);
-			}
-
-			// Update avg. lat-queues
-			iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
-			iter_queue = iter_hctx->driver_data;
-			iter_sample2 = iter_queue->in_flight_bytes;
-			if (iter_cpu == data->ctx->cpu && IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
-				iter_sample2 += bio->bi_iter.bi_size;
-
-			if (hw_queue->stats_lat_bytes[iter_cpu] == 0)
-				hw_queue->stats_lat_bytes[iter_cpu] = iter_sample2;
-			else {
-				hw_queue->stats_lat_bytes[iter_cpu] -= (hw_queue->stats_lat_bytes[iter_cpu] >> 3);
-				hw_queue->stats_lat_bytes[iter_cpu] += (iter_sample2 >> 3);
-			}
-			//if (blk_switch_appstr_printk)
-			//	printk(KERN_DEBUG "(pid %d cpu %d) i %d iter_cpu %d lat nr_active %d (user %d) in_flight %lu sample2 %d avg_bytes %lu", current->pid, current->cpu, i, iter_cpu, atomic_read(&iter_hctx->nr_active), atomic_read(&iter_hctx->tags->active_queues), iter_queue->in_flight_bytes, iter_sample2, hw_queue->stats_lat_bytes[iter_cpu]);
+		if (data->ctx->metric_thru == 0)
+			data->ctx->metric_thru = sample;
+		else {
+			data->ctx->metric_thru -= (data->ctx->metric_thru >> 3);
+			data->ctx->metric_thru += (sample >> 3);
 		}
 
-		// 2. App-steering
-		metric1 = hw_queue->stats_lat_bytes[data->ctx->cpu];
-		metric2 = hw_queue->stats_thru_bytes[data->ctx->cpu];
+		if (data->ctx->metric_thru < 10)
+			data->ctx->metric_thru = 0;
+
+		/* 1-2. Update metric_lat */
+		sample = hw_queue_lat->in_flight_bytes;
+		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
+			sample += bio->bi_iter.bi_size;
+
+		if (data->ctx->metric_lat == 0)
+			data->ctx->metric_lat = sample;
+		else {
+			data->ctx->metric_lat -= (data->ctx->metric_lat >> 3);
+			data->ctx->metric_lat += (sample >> 3);
+		}
+
+		if (data->ctx->metric_lat < 10)
+			data->ctx->metric_lat = 0;
+
+		/* 2. Perform app-steering */
+		metric1 = data->ctx->metric_lat;
+		metric2 = data->ctx->metric_thru;
 		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
 			min_metric = metric1 + metric2;
 		else
@@ -566,13 +544,14 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			if (iter_cpu == data->ctx->cpu)
 				continue;
 
-			iter_metric1 = hw_queue->stats_lat_bytes[iter_cpu];
-			iter_metric2 = hw_queue->stats_thru_bytes[iter_cpu];
+			iter_ctx = per_cpu_ptr(q->queue_ctx, iter_cpu); 
+
+			iter_metric1 = iter_ctx->metric_lat;
+			iter_metric2 = iter_ctx->metric_thru;
 
 			// app-steering for lat-apps
 			if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1) {
-				iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
-				iter_queue = iter_hctx->driver_data;
+				iter_queue = iter_ctx->hctxs[HCTX_TYPE_READ]->driver_data;
 
 				if (metric2 > 0 && iter_queue->in_flight_bytes > 0 &&
 					(metric1 + metric2) > (iter_metric1 + iter_metric2) &&
@@ -592,34 +571,39 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		}
 
 		if (target_cpu >= 0) {
+			struct cpumask *mask;
+			mask = kcalloc(1, sizeof(struct cpumask), GFP_KERNEL);
+
 			if (blk_switch_appstr_printk) {
-				iter_metric1 = hw_queue->stats_lat_bytes[target_cpu];
-				iter_metric2 = hw_queue->stats_thru_bytes[target_cpu];
+				iter_metric1 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_lat;
+				iter_metric2 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_thru;
 
 				if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
-					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %d -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, atomic_read(&data->hctx->tags->active_queues), target_cpu);
+					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu)\
+							iter (%lu %lu) lat-users %d -> core %d",
+						current->pid, current->cpu,
+						IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
+						metric1, metric2, iter_metric1, iter_metric2,
+						atomic_read(&data->hctx->tags->active_queues), target_cpu);
 				else
-					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d", current->pid, current->cpu, IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru", metric1, metric2, iter_metric1, iter_metric2, target_cpu);
+					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu)\
+							iter (%lu %lu) -> core %d",
+						current->pid, current->cpu,
+						IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
+						metric1, metric2, iter_metric1, iter_metric2, target_cpu);
 			}
 
 			if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 &&
-				atomic_read(&data->hctx->tags->active_queues) <= 1) {
-				for (i = 0; i < nr_cpus/nr_nodes; i++) {
-					iter_cpu = i * nr_nodes + data->hctx->numa_node;
-
-					iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_DEFAULT];
-					iter_queue = iter_hctx->driver_data;
-					iter_queue->stats_lat_bytes[data->ctx->cpu] = 0;
-
-					iter_hctx = per_cpu_ptr(q->queue_ctx, iter_cpu)->hctxs[HCTX_TYPE_READ];
-					iter_queue = iter_hctx->driver_data;
-					iter_queue->stats_lat_bytes[data->ctx->cpu] = 0;
-				}
-			}
+				atomic_read(&data->hctx->tags->active_queues) <= 1)
+				data->ctx->metric_lat = 0;
+			else if (IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1 &&
+				atomic_read(&data->hctx->tags->active_queues) <= 1)
+				data->ctx->metric_thru = 0;
 
 			cpumask_clear(mask);
 			cpumask_set_cpu(target_cpu, mask);
 			sched_setaffinity(current->pid, mask);
+			kfree(mask);
 		}
 
 		if (current->cpu != data->ctx->cpu) {
@@ -629,8 +613,8 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		}	
 	}
 
-	/* jaehyun
-	 * Request steering for thru-apps
+	/* blk-switch:
+	 * req-steering for throughput-bound apps
 	 */
 	if (blk_switch_steering_requests && data->hctx->blk_switch &&
 		blk_switch_is_thru_request(bio) && !app_steered) {
@@ -640,31 +624,27 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		int i, two_cpu[2], two_nr[2], target_cpu = -1;
 		bool power_of_two_choices = true;
 
-		if (blk_switch_steering_requests == 3) {
-			target_cpu = blk_switch_reqstr_core;
-			power_of_two_choices = false;
-		}
 		// 1. Find the first queue whose occupancy level
 		//	is less than the aggregation size
-		else if (blk_switch_steering_requests == 2) {
-			int min_nr = 1024, min_active = 1024, iter_active;
+		if (blk_switch_steering_requests == 2) {
+			int min_nr = 1024, min_active = 2048, iter_active;
 
 			for (i = 0; i < nr_cpus/nr_nodes; i++) {
 				two_cpu[0] = i * nr_nodes + data->hctx->numa_node;
 				iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_DEFAULT];
-				//two_nr[0] = atomic_read(&iter_hctx->nr_active);
+				iter_active = atomic_read(&iter_hctx->nr_active);
 				driver_queue = iter_hctx->driver_data;
 				two_nr[0] = blk_switch_aggr - atomic_read(&driver_queue->nr_req);
-				iter_active = atomic_read(&iter_hctx->nr_active);
+
+				iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_READ];
+				iter_active += atomic_read(&iter_hctx->nr_active);
 
 				if (two_nr[0] < blk_switch_aggr && two_nr[0] > 0 && two_nr[0] < min_nr) {
-					//atomic_read(&iter_hctx->nr_active) < blk_switch_aggr) {
 					target_cpu = two_cpu[0];
 					min_nr = two_nr[0];
 					power_of_two_choices = false;
 				}
 				else if (min_nr == 1024 && iter_active < min_active) {
-					//iter_active < blk_switch_aggr) {
 					target_cpu = two_cpu[0];
 					min_active = iter_active;
 					power_of_two_choices = false;
@@ -672,6 +652,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			}
 		}
 
+		// 2. Power of two choices
 		if (power_of_two_choices) {
 			get_random_bytes(&two_rand[0], 1);
 			two_rand[0] %= nr_cpus / nr_nodes;
@@ -699,9 +680,6 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			data->hctx = blk_mq_map_queue(q, data->cmd_flags, data->ctx);
 			req_steered = true;
 		}
-
-		if (blk_switch_printk)
-			printk(KERN_DEBUG "(pid %d cpu %d): two_choice? %s -> cpus (%d %d) nr (%d %d) -> target %d", current->pid, current->cpu, power_of_two_choices == true ? "true":"false", two_cpu[0], two_cpu[1], two_nr[0], two_nr[1], target_cpu);
 	}
 
 	if (e) {
@@ -730,7 +708,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 
 	rq = blk_mq_rq_ctx_init(data, tag, data->cmd_flags, alloc_time_ns);
 
-	// jaehyun: stats for blk-switch
+	/* blk-switch: for output-port stats */
 	if (data->hctx->blk_switch && bio && !req_steered) {
 		struct nvme_tcp_queue *hw_queue = data->hctx->driver_data;
 		hw_queue->in_flight_bytes += bio->bi_iter.bi_size;
@@ -897,8 +875,9 @@ EXPORT_SYMBOL(__blk_mq_end_request);
 
 void blk_mq_end_request(struct request *rq, blk_status_t error)
 {
-	// jaehyun
-	if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) && !rq->steered && rq->tag) {
+	/* blk-switch: for output-port stats */
+	if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) &&
+		!rq->steered && rq->tag) {
 		struct nvme_tcp_queue *hw_queue = rq->mq_hctx->driver_data;
 		hw_queue->in_flight_bytes -= blk_rq_bytes(rq);
 	}
@@ -2668,24 +2647,17 @@ static int blk_mq_init_hctx(struct request_queue *q,
 
 	hctx->tags = set->tags[hctx_idx];
 
-	// jaehyun
+	/* blk-switch */
 	hctx->blk_switch = false;
 
 	if (set->ops->init_hctx &&
 	    set->ops->init_hctx(hctx, set->driver_data, hctx_idx))
 		goto unregister_cpu_notifier;
 
-	// jaehyun
+	/* blk-switch: the condition is true for NVMe-over-TCP */
 	if (hctx->blk_switch) {
 		struct nvme_tcp_queue *hw_queue = hctx->driver_data;
-		int i, nr_cpus = num_online_cpus();
-
-		for (i = 0; i < nr_cpus; i++) {
-			hw_queue->stats_lat_bytes[i] = 0;
-			hw_queue->stats_thru_bytes[i] = 0;
-		}
 		hw_queue->in_flight_bytes = 0;
-		hw_queue->reset_stats = 0;
 	}
 
 	if (blk_mq_init_request(set, hctx->fq->flush_rq, hctx_idx,
@@ -2893,6 +2865,11 @@ static void blk_mq_map_swqueue(struct request_queue *q)
 		for (; j < HCTX_MAX_TYPES; j++)
 			ctx->hctxs[j] = blk_mq_map_queue_type(q,
 					HCTX_TYPE_DEFAULT, i);
+
+		/* blk-switch initiailization */
+		ctx->metric_lat = 0;
+		ctx->metric_thru = 0;
+		ctx->reset_metrics = 0;
 	}
 
 	queue_for_each_hw_ctx(q, hctx, i) {
