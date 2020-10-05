@@ -491,8 +491,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			data->ctx->metric_thru = 0;
 
 			if (blk_switch_appstr_printk) {
-				printk(KERN_ERR "(pid %d cpu %d) ctx[%u] receives a request(%s)\
-						-> reset metrics! (lat %u min %u)",
+				printk(KERN_ERR "(pid %d cpu %d) ctx[%u] receives a request(%s) -> reset metrics! (lat %u min %u)",
 					current->pid, current->cpu, data->ctx->cpu,
 					IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
 					sysctl_sched_latency, sysctl_sched_min_granularity);
@@ -579,15 +578,13 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				iter_metric2 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_thru;
 
 				if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
-					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu)\
-							iter (%lu %lu) lat-users %d -> core %d",
+					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %d -> core %d",
 						current->pid, current->cpu,
 						IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
 						metric1, metric2, iter_metric1, iter_metric2,
 						atomic_read(&data->hctx->tags->active_queues), target_cpu);
 				else
-					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu)\
-							iter (%lu %lu) -> core %d",
+					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d",
 						current->pid, current->cpu,
 						IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
 						metric1, metric2, iter_metric1, iter_metric2, target_cpu);

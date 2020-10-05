@@ -316,7 +316,7 @@ static inline bool i10_host_legacy_path(struct nvme_tcp_request *req)
 		aggregation_size = i10_lat_aggr;
 	} else {
 		delayed_doorbell = i10_thru_doorbell;
-		aggregation_size = i10_thru_doorbell;
+		aggregation_size = i10_thru_aggr;
 	}
 
 	return (nvme_tcp_queue_id(req->queue) == 0) ||
@@ -355,7 +355,7 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 			aggregation_size = i10_lat_aggr;
 		} else {
 			delayed_doorbell = i10_thru_doorbell;
-			aggregation_size = i10_thru_doorbell;
+			aggregation_size = i10_thru_aggr;
 		}
 
 		atomic_inc(&queue->nr_req);
@@ -367,18 +367,15 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 			atomic_inc(&queue->nr_timer);
 
 			//if (i10_host_is_latency(queue))
-			//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d tag %d\
-			//			-> RESET NEW DOORBELL!!", current->pid, current->cpu,
-			//		task_nice(current), atomic_read(&queue->nr_req),
-			//		blk_mq_rq_from_pdu(req)->tag);
+			//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d tag %d -> RESET NEW DOORBELL!!", current->pid, current->cpu,
+			//		task_nice(current), atomic_read(&queue->nr_req), blk_mq_rq_from_pdu(req)->tag);
 		}
 		if (atomic_read(&queue->nr_req) >= aggregation_size) {
 			if (hrtimer_active(&queue->doorbell_timer))	
 				hrtimer_cancel(&queue->doorbell_timer);
 
 			if (i10_host_is_latency(queue)) {
-				//printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d\
-				//		-> RING DOORBELL!!", current->pid, current->cpu,
+				//printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d -> RING DOORBELL!!", current->pid, current->cpu,
 				//	task_nice(current), atomic_read(&queue->nr_req));
 				queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
 			}
@@ -593,10 +590,8 @@ static int nvme_tcp_handle_c2h_data(struct nvme_tcp_queue *queue,
 
 	// jaehyun
 	//if (i10_host_is_latency(queue))
-	//	printk(KERN_DEBUG "(pid %d cpu %d nice %d):\
-	//			handle c2h_data pdu id %u -> RX rsp pdu!!",
-	//		current->pid, current->cpu, task_nice(current),
-	//		pdu->command_id);
+	//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): handle c2h_data pdu id %u -> RX rsp pdu!!",
+	//		current->pid, current->cpu, task_nice(current), pdu->command_id);
 
 	rq = blk_mq_tag_to_rq(nvme_tcp_tagset(queue), pdu->command_id);
 	if (!rq) {
@@ -939,10 +934,8 @@ static void nvme_tcp_data_ready(struct sock *sk)
 	if (likely(queue && queue->rd_enabled)) {
 		// jaehyun
 		if (i10_host_is_latency(queue)) {
-			//printk(KERN_DEBUG "(pid %d cpu %d nice %d):\
-			//		RX -> q_rq req_count %d -> data ready!!",
-			//	current->pid, current->cpu, task_nice(current),
-			//	atomic_read(&queue->nr_req));
+			//printk(KERN_DEBUG "(pid %d cpu %d nice %d): RX -> q_rq req_count %d -> data ready!!",
+			//	current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req));
 			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
 		}
 		else
@@ -1242,10 +1235,8 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 		}
 
 		//if (i10_host_is_latency(queue))
-		//	printk(KERN_DEBUG "(pid %d cpu %d nice %d):\
-		//			q_rq req_count %d -> sendmsg is called!!",
-		//	current->pid, current->cpu, task_nice(current),
-		//	atomic_read(&queue->nr_req));
+		//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d -> sendmsg is called!!",
+		//	current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req));
 
 		i10_ret = kernel_sendmsg(queue->sock, &msg,
 				queue->caravan_iovs,
