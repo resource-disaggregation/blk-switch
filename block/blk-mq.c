@@ -60,6 +60,14 @@ static int blk_switch_steering_apps __read_mostly = 0;
 module_param(blk_switch_steering_apps, int, 0644);
 MODULE_PARM_DESC(blk_switch_steering_apps, "blk-switch application steering on/off");
 
+static int blk_switch_nr_cpus __read_mostly = 24;
+module_param(blk_switch_nr_cpus, int, 0644);
+MODULE_PARM_DESC(blk_switch_nr_cpus, "blk-switch nr cpus");
+
+static int blk_switch_thru_count[6] = {0, 0, 0, 0, 0, 0};
+static int blk_switch_thru_new4[6] = {0, 0, 0, 0, 0, 0};
+static int blk_switch_thru_steer[6] = {0, 0, 0, 0, 0, 0};
+
 struct nvme_tcp_queue {
 	struct socket		*sock;
 	struct work_struct	io_work;
@@ -101,14 +109,15 @@ struct nvme_tcp_queue {
 	size_t			caravan_len;
 	int			nr_iovs;
 	bool			send_now;
+	int			nr_caravan_req;
 
 	struct page		**caravan_mapped;
 	int			nr_mapped;
 
 	/* jaehyun: For i10 delayed doorbells */
-	atomic_t		nr_timer;
 	atomic_t		nr_req;
 	struct hrtimer		doorbell_timer;
+	atomic_t		timer_set;
 
 	struct page_frag_cache	pf_cache;
 
@@ -431,7 +440,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 }
 
 /* For blk-switch */
-static bool blk_switch_is_thru_request(struct bio *bio)
+static inline bool blk_switch_is_thru_request(struct bio *bio)
 {
 	return (bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1);
 }
@@ -447,7 +456,8 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	u64 alloc_time_ns = 0;
 
 	/* blk-switch */
-	int nr_cpus = num_online_cpus(), nr_nodes = num_online_nodes();
+	//int nr_cpus = num_online_cpus(), nr_nodes = num_online_nodes();
+	int nr_cpus = blk_switch_nr_cpus, nr_nodes = num_online_nodes();
 	bool req_steered, app_steered;
 	req_steered = app_steered = false;
 
@@ -484,13 +494,47 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		unsigned long iter_metric1, iter_metric2;
 		int i, iter_cpu, target_cpu = -1;
 
-		/* 0. Reset metrics if apps are idle for 100ms*/
+		/* 0. Reset metrics if there's no traffic for 100ms */
 		if (data->ctx->reset_metrics == 0 ||
 			time_after(jiffies, data->ctx->reset_metrics)) {
 			data->ctx->metric_lat = 0;
 			data->ctx->metric_thru = 0;
 
-			if (blk_switch_appstr_printk) {
+			// print out the req-steering-related statistics
+			if (blk_switch_appstr_printk == 1) {
+				printk(KERN_DEBUG "(pid %d cpu %d) req-count: %d %d %d %d %d %d",
+					current->pid, current->cpu,
+					blk_switch_thru_count[0],
+					blk_switch_thru_count[1],
+					blk_switch_thru_count[2],
+					blk_switch_thru_count[3],
+					blk_switch_thru_count[4],
+					blk_switch_thru_count[5]);
+				printk(KERN_DEBUG "(pid %d cpu %d) step2: %d %d %d %d %d %d",
+					current->pid, current->cpu,
+					blk_switch_thru_new4[0],
+					blk_switch_thru_new4[1],
+					blk_switch_thru_new4[2],
+					blk_switch_thru_new4[3],
+					blk_switch_thru_new4[4],
+					blk_switch_thru_new4[5]);
+				printk(KERN_DEBUG "(pid %d cpu %d) steered: %d %d %d %d %d %d",
+					current->pid, current->cpu,
+					blk_switch_thru_steer[0],
+					blk_switch_thru_steer[1],
+					blk_switch_thru_steer[2],
+					blk_switch_thru_steer[3],
+					blk_switch_thru_steer[4],
+					blk_switch_thru_steer[5]);
+			}
+
+			for (i=0; i<6; i++) {
+				blk_switch_thru_count[i] = 0;
+				blk_switch_thru_new4[i] = 0;
+				blk_switch_thru_steer[i] = 0;
+			}
+
+			if (blk_switch_appstr_printk == 1) {
 				printk(KERN_ERR "(pid %d cpu %d) ctx[%u] receives a request(%s) -> reset metrics! (lat %u min %u)",
 					current->pid, current->cpu, data->ctx->cpu,
 					IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
@@ -573,7 +617,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			struct cpumask *mask;
 			mask = kcalloc(1, sizeof(struct cpumask), GFP_KERNEL);
 
-			if (blk_switch_appstr_printk) {
+			if (blk_switch_appstr_printk == 1) {
 				iter_metric1 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_lat;
 				iter_metric2 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_thru;
 
@@ -614,41 +658,66 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	 * req-steering for throughput-bound apps
 	 */
 	if (blk_switch_steering_requests && data->hctx->blk_switch &&
-		blk_switch_is_thru_request(bio) && !app_steered) {
+	   blk_switch_is_thru_request(bio) && !app_steered &&
+	   nr_cpus >= nr_nodes * 2) {
 		struct blk_mq_hw_ctx *iter_hctx;
 		struct nvme_tcp_queue *driver_queue;
 		unsigned char two_rand[2];
 		int i, two_cpu[2], two_nr[2], target_cpu = -1;
-		bool power_of_two_choices = true;
+		int min_nr = 1024, min_active = 2048, thru_active;
+		unsigned long lat_metric;
 
-		// 1. Find the first queue whose occupancy level
-		//	is less than the aggregation size
-		int min_nr = 1024, min_active = 2048, iter_active;
+		// New req-steering algorithm:
+		// 1) Push requests into local queue until it becomes busy
+		iter_hctx = data->ctx->hctxs[HCTX_TYPE_DEFAULT];
+		thru_active = atomic_read(&iter_hctx->nr_active);
+
+		if (thru_active < blk_switch_aggr * 2) {
+			target_cpu = data->ctx->cpu;
+			goto req_steering;
+		}
+		else
+			blk_switch_thru_new4[data->ctx->cpu/4]++;
 
 		for (i = 0; i < nr_cpus/nr_nodes; i++) {
 			two_cpu[0] = i * nr_nodes + data->hctx->numa_node;
 			iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_DEFAULT];
-			iter_active = atomic_read(&iter_hctx->nr_active);
+			thru_active = atomic_read(&iter_hctx->nr_active);
 			driver_queue = iter_hctx->driver_data;
 			two_nr[0] = blk_switch_aggr - atomic_read(&driver_queue->nr_req);
+			lat_metric = per_cpu_ptr(q->queue_ctx, two_cpu[0])->metric_lat;
 
-			iter_hctx = per_cpu_ptr(q->queue_ctx, two_cpu[0])->hctxs[HCTX_TYPE_READ];
-			iter_active += atomic_read(&iter_hctx->nr_active);
-
-			if (two_nr[0] < blk_switch_aggr && two_nr[0] > 0 && two_nr[0] < min_nr) {
-				target_cpu = two_cpu[0];
-				min_nr = two_nr[0];
-				power_of_two_choices = false;
+			// 2) Pick-up other queue considering i10 batching
+			if (!lat_metric && thru_active < blk_switch_aggr) {
+				if (two_nr[0] < min_nr) {
+					target_cpu = two_cpu[0];
+					min_nr = two_nr[0];
+					min_active = thru_active;
+				}
+				// 2-1) considering #outstanding requests
+				else if (two_nr[0] == min_nr) {
+					if (thru_active < min_active) {
+						target_cpu = two_cpu[0];
+						min_active = thru_active;
+					}
+					// 2-2) considering local queue
+					else if (thru_active == min_active) {
+						if (two_cpu[0] == data->ctx->cpu)
+							target_cpu = two_cpu[0];
+						// 2-3) randomly choose one among remainings
+						else if (target_cpu != data->ctx->cpu) {
+							get_random_bytes(&two_rand[0], 1);
+							two_rand[0] %= 2;
+							if (two_rand[0] == 0)
+								target_cpu = two_cpu[0];
+						}
+					}
+				}
 			}
-			else if (min_nr == 1024 && iter_active < min_active) {
-				target_cpu = two_cpu[0];
-				min_active = iter_active;
-				power_of_two_choices = false;
-			}					
 		}
 
-		// 2. Power of two choices if target core is not chosen yet
-		if (power_of_two_choices) {
+		// 3) Otherwise, run power-of-two-choices among all cores
+		if (target_cpu < 0) {
 			get_random_bytes(&two_rand[0], 1);
 			two_rand[0] %= nr_cpus / nr_nodes;
 			two_cpu[0] = two_rand[0] * nr_nodes + data->hctx->numa_node;
@@ -670,11 +739,15 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				target_cpu = two_cpu[1];
 		}
 
+req_steering:
 		if (data->ctx->cpu != target_cpu) {
+			blk_switch_thru_steer[data->ctx->cpu/4]++;
 			data->ctx = per_cpu_ptr(q->queue_ctx, target_cpu);
 			data->hctx = blk_mq_map_queue(q, data->cmd_flags, data->ctx);
 			req_steered = true;
 		}
+
+		blk_switch_thru_count[target_cpu/4]++;
 	}
 
 	if (e) {
@@ -709,6 +782,10 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		hw_queue->in_flight_bytes += bio->bi_iter.bi_size;
 	}
 	rq->steered = req_steered;
+
+	//if (data->hctx->blk_switch && bio)
+	//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): blk-mq: init request (size %u tag %d)",
+	//		current->pid, current->cpu, task_nice(current), bio->bi_iter.bi_size, rq->tag);
 
 	if (!op_is_flush(data->cmd_flags)) {
 		rq->elv.icq = NULL;
