@@ -46,10 +46,6 @@ static int i10_thru_nice __read_mostly = 0;
 module_param(i10_thru_nice, int, 0644);
 MODULE_PARM_DESC(i10_thru_nice, "i10 thru kthread nice");
 
-static int i10_lat_nice __read_mostly = -20;
-module_param(i10_lat_nice, int, 0644);
-MODULE_PARM_DESC(i10_lat_nice, "i10 thru kthread nice");
-
 static int i10_thru_printk __read_mostly = 0;
 module_param(i10_thru_printk, int, 0644);
 MODULE_PARM_DESC(i10_thru_printk, "i10 thru kthread nice");
@@ -307,7 +303,9 @@ static inline void nvme_tcp_advance_req(struct nvme_tcp_request *req,
 /* jaehyun */
 static inline bool i10_host_is_thru_request(struct bio *bio)
 {
-	return (bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1);
+	//return (bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1);
+	return ((bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1) &&
+		task_nice(current) != -1);
 }
 
 static inline bool i10_host_is_latency(struct nvme_tcp_queue *queue)
@@ -362,6 +360,11 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 		aggregation_size = i10_thru_aggr;
 	}
 
+	//if (req->curr_bio)
+        //      printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d opf %u flags %u q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), req->curr_bio->bi_opf, req->curr_bio->bi_flags, queue->prio_class);
+        //else
+        //      printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d bio null q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), queue->prio_class);
+
 	spin_lock(&queue->lock);
 	list_add_tail(&req->entry, &queue->send_list);
 	if (!i10_host_legacy_path(req) && !i10_host_is_nodelay_path(req)) {
@@ -412,6 +415,11 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 			hrtimer_cancel(&queue->doorbell_timer);
 
 		atomic_set(&queue->timer_set, 0);
+
+		if (i10_thru_printk==1)
+			printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq %d NO_DELAY path (to core %d)",
+				current->pid, current->cpu, task_nice(current),
+				atomic_read(&queue->nr_req), queue->io_cpu);
 
 		if (i10_host_is_latency(queue))
 			queue_work_on(queue->io_cpu, nvme_tcp_wq_lat, &queue->io_work_lat);
@@ -1440,13 +1448,6 @@ static void nvme_tcp_io_work_lat(struct work_struct *w)
 		container_of(w, struct nvme_tcp_queue, io_work_lat);
 	unsigned long deadline = jiffies + msecs_to_jiffies(1);
 
-	/* blk-switch: set lat kthread's nice value */
-        if (task_nice(current) != i10_lat_nice) {
-                set_user_nice(current, i10_lat_nice);
-                printk(KERN_DEBUG "(pid %d cpu %d nice %d): lat kthread -> set nice to %d",
-                        current->pid, current->cpu, task_nice(current), i10_lat_nice);
-        }
-
 	do {
 		bool pending = false;
 		int result;
@@ -1747,6 +1748,9 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 		goto err_sock;
 	}
 
+	/* Set a higher priority to lat-socket */
+	
+
 	/*
 	 * Cleanup whatever is sitting in the TCP transmit queue on socket
 	 * close. This is done to prevent stale data from being sent should
@@ -1785,6 +1789,21 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	queue->pdu_offset = 0;
 	sk_set_memalloc(queue->sock->sk);
 
+	// jaehyun
+/*
+	if (qid > num_online_cpus()) {
+		printk(KERN_DEBUG "qid %d (cpu %d) set high priority (so_priority)",
+			qid, queue->io_cpu);
+		opt = 7;
+		ret = kernel_setsockopt(queue->sock, SOL_SOCKET, SO_PRIORITY,
+				(char *)&opt, sizeof(opt));
+		if (ret) {
+			dev_err(ctrl->ctrl.device,
+					"failed to set SO_PRIORITY sock opt %d\n", ret);
+			goto err_sock;
+		}
+	}	
+*/
 	if (nctrl->opts->mask & NVMF_OPT_HOST_TRADDR) {
 		ret = kernel_bind(queue->sock, (struct sockaddr *)&ctrl->src_addr,
 			sizeof(ctrl->src_addr));

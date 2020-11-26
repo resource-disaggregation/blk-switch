@@ -442,7 +442,8 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 /* For blk-switch */
 static inline bool blk_switch_is_thru_request(struct bio *bio)
 {
-	return (bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1);
+	return ((bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1) &&
+		task_nice(current) != -1);
 }
 
 static struct request *blk_mq_get_request(struct request_queue *q,
@@ -542,11 +543,11 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				printk(KERN_ERR "\n");
 			}
 		}
-		data->ctx->reset_metrics = jiffies + msecs_to_jiffies(100);
+		data->ctx->reset_metrics = jiffies + msecs_to_jiffies(200);
 
 		/* 1-1. Update metric_thru */
 		sample = hw_queue_thru->in_flight_bytes;
-		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1)
+		if (blk_switch_is_thru_request(bio))
 			sample += bio->bi_iter.bi_size;
 
 		if (data->ctx->metric_thru == 0)
@@ -561,7 +562,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 
 		/* 1-2. Update metric_lat */
 		sample = hw_queue_lat->in_flight_bytes;
-		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
+		if (!blk_switch_is_thru_request(bio))
 			sample += bio->bi_iter.bi_size;
 
 		if (data->ctx->metric_lat == 0)
@@ -577,7 +578,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 		/* 2. Perform app-steering */
 		metric1 = data->ctx->metric_lat;
 		metric2 = data->ctx->metric_thru;
-		if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
+		if (!blk_switch_is_thru_request(bio))
 			min_metric = metric1 + metric2;
 		else
 			min_metric = metric1;
@@ -593,7 +594,7 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 			iter_metric2 = iter_ctx->metric_thru;
 
 			// app-steering for lat-apps
-			if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1) {
+			if (!blk_switch_is_thru_request(bio)) {
 				iter_queue = iter_ctx->hctxs[HCTX_TYPE_READ]->driver_data;
 
 				if (metric2 > 0 && iter_queue->in_flight_bytes > 0 &&
@@ -621,23 +622,23 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 				iter_metric1 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_lat;
 				iter_metric2 = per_cpu_ptr(q->queue_ctx, target_cpu)->metric_thru;
 
-				if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1)
-					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %d -> core %d",
-						current->pid, current->cpu,
+				if (!blk_switch_is_thru_request(bio))
+					printk(KERN_ERR "(pid %d cpu %d numa %d) -- %s -- metric (%lu %lu) iter (%lu %lu) lat-users %d -> core %d",
+						current->pid, current->cpu, data->hctx->numa_node,
 						IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
 						metric1, metric2, iter_metric1, iter_metric2,
 						atomic_read(&data->hctx->tags->active_queues), target_cpu);
 				else
-					printk(KERN_ERR "(pid %d cpu %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d",
-						current->pid, current->cpu,
+					printk(KERN_ERR "(pid %d cpu %d numa %d) -- %s -- metric (%lu %lu) iter (%lu %lu) -> core %d",
+						current->pid, current->cpu, data->hctx->numa_node,
 						IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 ? "lat":"thru",
 						metric1, metric2, iter_metric1, iter_metric2, target_cpu);
 			}
 
-			if (IOPRIO_PRIO_CLASS(bio_prio(bio)) == 1 &&
+			if (!blk_switch_is_thru_request(bio) &&
 				atomic_read(&data->hctx->tags->active_queues) <= 1)
 				data->ctx->metric_lat = 0;
-			else if (IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1 &&
+			else if (blk_switch_is_thru_request(bio) &&
 				atomic_read(&data->hctx->tags->active_queues) <= 1)
 				data->ctx->metric_thru = 0;
 
