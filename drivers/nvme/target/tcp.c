@@ -45,6 +45,18 @@ static int nvmet_tcp_aggr __read_mostly = 1;
 module_param(nvmet_tcp_aggr, int, 0644);
 MODULE_PARM_DESC(nvmet_tcp_aggr, "nvmet tcp aggregation");
 
+static int i10_target_steering __read_mostly = 0;
+module_param(i10_target_steering, int, 0644);
+MODULE_PARM_DESC(i10_target_steering, "i10 thru kthread nice");
+
+static int i10_thru_nice __read_mostly = 0;
+module_param(i10_thru_nice, int, 0644);
+MODULE_PARM_DESC(i10_thru_nice, "i10 thru kthread nice");
+
+static int i10_thru_printk __read_mostly = 0;
+module_param(i10_thru_printk, int, 0644);
+MODULE_PARM_DESC(i10_thru_printk, "i10 thru kthread nice");
+
 enum nvmet_tcp_send_state {
 	NVMET_TCP_SEND_DATA_PDU,
 	NVMET_TCP_SEND_DATA,
@@ -114,6 +126,13 @@ struct nvmet_tcp_queue {
 	struct nvmet_cq		nvme_cq;
 	struct nvmet_sq		nvme_sq;
 
+	/* for blk-switch */
+	struct work_struct	io_work_lat;
+	int			prio_class;
+	int			orig_cpu;
+	int			numa_node;
+	unsigned int		metric;
+
 	/* send state */
 	struct nvmet_tcp_cmd	*cmds;
 	unsigned int		nr_cmds;
@@ -172,6 +191,8 @@ struct nvmet_tcp_port {
 	struct nvmet_port	*nport;
 	struct sockaddr_storage addr;
 	int			last_cpu;
+	unsigned long		reset_metric;
+	unsigned long		print_time;
 	void (*data_ready)(struct sock *);
 };
 
@@ -180,6 +201,7 @@ static LIST_HEAD(nvmet_tcp_queue_list);
 static DEFINE_MUTEX(nvmet_tcp_queue_mutex);
 
 static struct workqueue_struct *nvmet_tcp_wq;
+static struct workqueue_struct *nvmet_tcp_wq_lat;
 static struct nvmet_fabrics_ops nvmet_tcp_ops;
 static void nvmet_tcp_free_cmd(struct nvmet_tcp_cmd *c);
 static void nvmet_tcp_finish_cmd(struct nvmet_tcp_cmd *cmd);
@@ -493,10 +515,17 @@ static void nvmet_tcp_process_resp_list(struct nvmet_tcp_queue *queue)
 	}
 }
 
+static inline bool i10_target_is_latency(struct nvmet_tcp_queue *queue)
+{
+	return queue->prio_class == 1;
+}
+
 static inline bool i10_target_is_admin_queue(struct nvmet_tcp_queue *queue)
 {
-	return queue->nvme_sq.qid == 0;
+	//return (queue->nvme_sq.qid == 0);
+	return (queue->nvme_sq.qid == 0 || queue->prio_class == 1);
 }
+
 
 static inline bool i10_target_is_caravan_full(struct nvmet_tcp_queue *queue)
 {
@@ -539,7 +568,12 @@ static void nvmet_tcp_queue_response(struct nvmet_req *req)
 	struct nvmet_tcp_queue	*queue = cmd->queue;
 
 	llist_add(&cmd->lentry, &queue->resp_list);
-	queue_work_on(cmd->queue->cpu, nvmet_tcp_wq, &cmd->queue->io_work);
+
+	// jaehyun
+	if (i10_target_is_latency(queue))
+		queue_work_on(cmd->queue->cpu, nvmet_tcp_wq_lat, &cmd->queue->io_work_lat);
+	else
+		queue_work_on(cmd->queue->cpu, nvmet_tcp_wq, &cmd->queue->io_work);
 }
 
 static int nvmet_try_send_data_pdu(struct nvmet_tcp_cmd *cmd)
@@ -1336,6 +1370,13 @@ static void nvmet_tcp_io_work(struct work_struct *w)
 	bool pending;
 	int ret, ops = 0;
 
+	/* blk-switch: set thru kthread's nice value */
+	if (task_nice(current) != i10_thru_nice) {
+		set_user_nice(current, i10_thru_nice);
+		printk(KERN_DEBUG "(pid %d cpu %d nice %d): thru kthread -> set nice to %d",
+			current->pid, current->cpu, task_nice(current), i10_thru_nice);
+	}
+
 	do {
 		pending = false;
 
@@ -1374,6 +1415,51 @@ static void nvmet_tcp_io_work(struct work_struct *w)
 	 */
 	if (pending)
 		queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
+}
+
+/* blk-switch: io_work_lat for lat-requests */
+static void nvmet_tcp_io_work_lat(struct work_struct *w)
+{
+	struct nvmet_tcp_queue *queue =
+		container_of(w, struct nvmet_tcp_queue, io_work_lat);
+	bool pending;
+	int ret, ops = 0;
+
+	do {
+		pending = false;
+
+		// jaehyun
+		ret = nvmet_tcp_try_recv(queue, nvmet_tcp_io_recv_budget, &ops);
+		if (ret > 0) {
+			pending = true;
+		} else if (ret < 0) {
+			if (ret == -EPIPE || ret == -ECONNRESET)
+				kernel_sock_shutdown(queue->sock, SHUT_RDWR);
+			else
+				nvmet_tcp_fatal_error(queue);
+			return;
+		}
+
+		// jaehyun
+		ret = nvmet_tcp_try_send(queue, nvmet_tcp_io_send_budget, &ops);
+		if (ret > 0) {
+			/* transmitted message/data */
+			pending = true;
+		} else if (ret < 0) {
+			if (ret == -EPIPE || ret == -ECONNRESET)
+				kernel_sock_shutdown(queue->sock, SHUT_RDWR);
+			else
+				nvmet_tcp_fatal_error(queue);
+			return;
+		}
+
+	} while (pending && ops < nvmet_tcp_io_work_budget);
+
+	/*
+	 * We exahusted our budget, requeue our selves
+	 */
+	if (pending)
+		queue_work_on(queue->cpu, nvmet_tcp_wq_lat, &queue->io_work_lat);
 }
 
 static int nvmet_tcp_alloc_cmd(struct nvmet_tcp_queue *queue,
@@ -1513,10 +1599,14 @@ static void nvmet_tcp_release_queue_work(struct work_struct *w)
 
 	nvmet_tcp_restore_socket_callbacks(queue);
 	flush_work(&queue->io_work);
+	// jaehyun
+	flush_work(&queue->io_work_lat);
 
 	nvmet_tcp_uninit_data_in_cmds(queue);
 	nvmet_sq_destroy(&queue->nvme_sq);
 	cancel_work_sync(&queue->io_work);
+	// jaehyun
+	cancel_work_sync(&queue->io_work_lat);
 	sock_release(queue->sock);
 	nvmet_tcp_free_cmds(queue);
 	if (queue->hdr_digest || queue->data_digest)
@@ -1532,8 +1622,174 @@ static void nvmet_tcp_data_ready(struct sock *sk)
 
 	read_lock_bh(&sk->sk_callback_lock);
 	queue = sk->sk_user_data;
-	if (likely(queue))
-		queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
+	if (likely(queue)) {
+		// jaehyun
+		if (i10_target_steering) {
+			int nr_cpus = num_online_cpus(), nr_nodes = num_online_nodes();
+			struct nvmet_tcp_queue *iter_queue;
+			int lat_metric[6], thru_metric[6];
+			int local = queue->cpu / nr_nodes;
+			int i, j, target_cpu = -1, min_metric = 1000000;
+
+			int lat_qo[4][6], thru_qo[4][6];
+			int lat_core[4][6], thru_core[4][6];
+
+			// 0. Reset metrics and core if there's no traffic for 100ms
+			if (queue->nvme_sq.qid != 0 &&
+			   (queue->port->reset_metric == 0 ||
+			   time_after(jiffies, queue->port->reset_metric))) {
+				list_for_each_entry(iter_queue, &nvmet_tcp_queue_list, queue_list) {
+					if (iter_queue->nvme_sq.qid != 0) {
+						iter_queue->metric = 0;
+						iter_queue->cpu = iter_queue->orig_cpu;
+					}
+				}
+				printk(KERN_DEBUG "(pid %d cpu %d nice %d) core steering / metrics are reset!",
+					current->pid, current->cpu, task_nice(current));
+			}
+			queue->port->reset_metric = jiffies + msecs_to_jiffies(200);
+
+			if (i10_thru_printk && queue->nvme_sq.qid != 0 && queue->cpu == 0 &&
+			   (queue->port->print_time == 0 || time_after(jiffies, queue->port->print_time))) {
+				queue->port->print_time = jiffies + msecs_to_jiffies(50);
+
+				for (i = 0; i < nr_nodes; i++) {
+					for (j = 0; j < nr_cpus/nr_nodes; j++) {
+						lat_qo[i][j] = 0;
+						lat_core[i][j] = 0;
+						thru_qo[i][j] = 0;
+						thru_core[i][j] = 0;
+					}
+				}
+
+				list_for_each_entry(iter_queue, &nvmet_tcp_queue_list, queue_list) {
+					if (iter_queue->idx > nr_cpus) {
+						lat_qo[iter_queue->numa_node][iter_queue->cpu/nr_nodes] +=
+							iter_queue->metric;
+							//atomic_read(&iter_queue->sock->sk->sk_rmem_alloc);
+						lat_core[iter_queue->numa_node][iter_queue->cpu/nr_nodes]++;
+					} else {
+						thru_qo[iter_queue->numa_node][iter_queue->cpu/nr_nodes] +=
+							iter_queue->metric;
+							//atomic_read(&iter_queue->sock->sk->sk_rmem_alloc);
+						thru_core[iter_queue->numa_node][iter_queue->cpu/nr_nodes]++;
+					}
+				}
+
+				for (i = 0; i < nr_nodes; i++) {
+					printk(KERN_DEBUG "===== NUMA %d =======", i);
+					printk(KERN_DEBUG "QO: [0](L %d T %d) [1](L %d T %d) [2](L %d T %d) [3](L %d T %d) [4](L %d T %d) [5](L %d T %d)",
+						lat_qo[i][0], thru_qo[i][0],
+						lat_qo[i][1], thru_qo[i][1],
+						lat_qo[i][2], thru_qo[i][2],
+						lat_qo[i][3], thru_qo[i][3],
+						lat_qo[i][4], thru_qo[i][4],
+						lat_qo[i][5], thru_qo[i][5]);
+					printk(KERN_DEBUG "CO: [0](L %d T %d) [1](L %d T %d) [2](L %d T %d) [3](L %d T %d) [4](L %d T %d) [5](L %d T %d)",
+						lat_core[i][0], thru_core[i][0],
+						lat_core[i][1], thru_core[i][1],
+						lat_core[i][2], thru_core[i][2],
+						lat_core[i][3], thru_core[i][3],
+						lat_core[i][4], thru_core[i][4],
+						lat_core[i][5], thru_core[i][5]);
+				}
+				printk(KERN_DEBUG "\n");
+			}
+
+			for (i = 0; i < nr_cpus/nr_nodes; i++) {
+				lat_metric[i] = 0;
+				thru_metric[i] = 0;
+			}
+
+			list_for_each_entry(iter_queue, &nvmet_tcp_queue_list, queue_list) {
+				// 1. update metric
+				if (iter_queue->nvme_sq.qid != 0 &&
+				   iter_queue->numa_node == queue->numa_node) {
+					int sample = atomic_read(&iter_queue->sock->sk->sk_rmem_alloc);
+
+					if (iter_queue->metric == 0)
+						iter_queue->metric = sample;
+					else {
+						iter_queue->metric -= (iter_queue->metric >> 3);
+						iter_queue->metric += (sample >> 3);
+					}
+
+					if (iter_queue->metric < 10)
+						iter_queue->metric = 0;
+
+					if (iter_queue->idx > nr_cpus)
+						// For lat-lanes
+						lat_metric[iter_queue->cpu/nr_nodes] += iter_queue->metric;
+					else
+						// For thru-lanes
+						thru_metric[iter_queue->cpu/nr_nodes] += iter_queue->metric;
+				}
+			}
+
+			// target-steering for lat-apps
+			if (i10_target_is_latency(queue)) {
+				for (i = 0; i < nr_cpus/nr_nodes; i++) {
+					if (i != local && lat_metric[i] && thru_metric[local] &&
+					   lat_metric[i]+thru_metric[i] < lat_metric[local]+thru_metric[local] &&
+					   lat_metric[i]+thru_metric[i] < min_metric) {
+						target_cpu = (i * nr_nodes) + queue->numa_node;
+						min_metric = lat_metric[i]+thru_metric[i];
+					}
+				}
+
+				if (target_cpu >= 0) {
+/*
+					if (i10_thru_printk)
+						printk(KERN_DEBUG "--LAT--(orig %d cpu %d numa %d) [0](%u %u) [1](%u %u) [2](%u %u) [3](%u %u) [4](%u %u) [5](%u %u) cpu %d -> %d",
+							queue->orig_cpu, queue->cpu, queue->numa_node,
+							lat_metric[0], thru_metric[0],
+							lat_metric[1], thru_metric[1],
+							lat_metric[2], thru_metric[2],
+							lat_metric[3], thru_metric[3],
+							lat_metric[4], thru_metric[4],
+							lat_metric[5], thru_metric[5],
+							queue->cpu, target_cpu);
+*/
+					queue->cpu = target_cpu;
+				}
+				queue_work_on(queue->cpu, nvmet_tcp_wq_lat, &queue->io_work_lat);
+			}
+			// target-steering for thru-apps
+			else {
+				for (i = 0; i < nr_cpus/nr_nodes; i++) {
+					if (i != local && lat_metric[local] &&
+					   lat_metric[i] < min_metric) {
+					   //thru_metric[i] < thru_metric[local]) {
+						target_cpu = (i * nr_nodes) + queue->numa_node;
+						min_metric = lat_metric[i];
+					}
+				}
+
+				if (target_cpu >= 0) {
+/*
+					if (i10_thru_printk)
+						 printk(KERN_DEBUG "::THRU::(orig %d cpu %d numa %d) [0](%u %u) [1](%u %u) [2](%u %u) [3](%u %u) [4](%u %u) [5](%u %u) cpu %d -> %d",
+							queue->orig_cpu, queue->cpu, queue->numa_node,
+							lat_metric[0], thru_metric[0],
+							lat_metric[1], thru_metric[1],
+							lat_metric[2], thru_metric[2],
+							lat_metric[3], thru_metric[3],
+							lat_metric[4], thru_metric[4],
+							lat_metric[5], thru_metric[5],
+							queue->cpu, target_cpu);
+*/
+					queue->cpu = target_cpu;
+				}
+				queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
+			}				
+		}
+		else {
+			if (i10_target_is_latency(queue))
+				queue_work_on(queue->cpu, nvmet_tcp_wq_lat, &queue->io_work_lat);
+			else
+				queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
+		}
+	}
 	read_unlock_bh(&sk->sk_callback_lock);
 }
 
@@ -1553,7 +1809,11 @@ static void nvmet_tcp_write_space(struct sock *sk)
 
 	if (sk_stream_is_writeable(sk)) {
 		clear_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
-		queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
+		// jaehyun
+		if (i10_target_is_latency(queue))
+			queue_work_on(queue->cpu, nvmet_tcp_wq_lat, &queue->io_work_lat);
+		else
+			queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
 	}
 out:
 	read_unlock_bh(&sk->sk_callback_lock);
@@ -1646,6 +1906,8 @@ static int nvmet_tcp_alloc_queue(struct nvmet_tcp_port *port,
 
 	INIT_WORK(&queue->release_work, nvmet_tcp_release_queue_work);
 	INIT_WORK(&queue->io_work, nvmet_tcp_io_work);
+	// jaehyun
+	INIT_WORK(&queue->io_work_lat, nvmet_tcp_io_work_lat);
 	queue->sock = newsock;
 	queue->port = port;
 	queue->nr_cmds = 0;
@@ -1693,14 +1955,25 @@ static int nvmet_tcp_alloc_queue(struct nvmet_tcp_port *port,
 	if (ret)
 		goto out_free_connect;
 
-	port->last_cpu = cpumask_next_wrap(port->last_cpu,
-				cpu_online_mask, -1, false);
+	if (queue->idx != 1)
+		port->last_cpu = cpumask_next_wrap(port->last_cpu,
+					cpu_online_mask, -1, false);
 	queue->cpu = port->last_cpu;
-	// jaehyun: to use separate cores
-	if (queue->idx > 24)
+
+	if (queue->idx > num_online_cpus()) {
+		/* latency-sensitive i10-lanes */
 		queue->cpu++;
+		queue->prio_class = 1;
+	} else
+		/* throughput-bound i10-lanes */
+		queue->prio_class = 0;
+
 	if (queue->cpu >= num_online_cpus())
 		queue->cpu = 0;
+
+	queue->orig_cpu = queue->cpu;
+	queue->numa_node = queue->orig_cpu % num_online_nodes();
+	queue->metric = 0;
 
 	nvmet_prepare_receive_pdu(queue);
 
@@ -1715,7 +1988,10 @@ static int nvmet_tcp_alloc_queue(struct nvmet_tcp_port *port,
 	// jaehyun
 	printk(KERN_DEBUG "nvmet_tcp_alloc_queue - nvmet_tcp_queue[%d]'s tcp connection established on io_cpu %d", queue->idx, queue->cpu);
 
-	queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
+	if (i10_target_is_latency(queue))
+		queue_work_on(queue->cpu, nvmet_tcp_wq_lat, &queue->io_work_lat);
+	else
+		queue_work_on(queue->cpu, nvmet_tcp_wq, &queue->io_work);
 
 	return 0;
 out_destroy_sq:
@@ -1809,6 +2085,9 @@ static int nvmet_tcp_add_port(struct nvmet_port *nport)
 
 	port->nport = nport;
 	port->last_cpu = -1;
+	// jaehyun
+	port->reset_metric = 0;
+	port->print_time = 0;
 	INIT_WORK(&port->accept_work, nvmet_tcp_accept_work);
 	if (port->nport->inline_data_size < 0)
 		port->nport->inline_data_size = NVMET_TCP_DEF_INLINE_DATA_SIZE;
@@ -1955,13 +2234,13 @@ static int __init nvmet_tcp_init(void)
 {
 	int ret;
 
-	nvmet_tcp_wq = alloc_workqueue("nvmet_tcp_wq", WQ_HIGHPRI, 0);
-	//nvmet_tcp_wq = alloc_workqueue("nvmet_tcp_wq", 0, 0);
+	//nvmet_tcp_wq = alloc_workqueue("nvmet_tcp_wq", WQ_HIGHPRI, 0);
+	nvmet_tcp_wq = alloc_workqueue("nvmet_tcp_wq", 0, 0);
 	if (!nvmet_tcp_wq)
 		return -ENOMEM;
-	//nvmet_tcp_wq_lat = alloc_workqueue("nvmet_tcp_wq_lat", WQ_HIGHPRI, 0);
-	//if (!nvmet_tcp_wq_lat)
-	//	return -ENOMEM;
+	nvmet_tcp_wq_lat = alloc_workqueue("nvmet_tcp_wq_lat", WQ_HIGHPRI, 0);
+	if (!nvmet_tcp_wq_lat)
+		return -ENOMEM;
 
 	ret = nvmet_register_transport(&nvmet_tcp_ops);
 	if (ret)
@@ -1970,7 +2249,7 @@ static int __init nvmet_tcp_init(void)
 	return 0;
 err:
 	destroy_workqueue(nvmet_tcp_wq);
-	//destroy_workqueue(nvmet_tcp_wq_lat);
+	destroy_workqueue(nvmet_tcp_wq_lat);
 	return ret;
 }
 
@@ -1988,7 +2267,7 @@ static void __exit nvmet_tcp_exit(void)
 	flush_scheduled_work();
 
 	destroy_workqueue(nvmet_tcp_wq);
-	//destroy_workqueue(nvmet_tcp_wq_lat);
+	destroy_workqueue(nvmet_tcp_wq_lat);
 }
 
 module_init(nvmet_tcp_init);
