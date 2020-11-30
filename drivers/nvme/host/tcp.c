@@ -99,7 +99,8 @@ struct nvme_tcp_queue {
 	/* for blk-switch */
         struct work_struct      io_work_lat;
         int                     prio_class;
-        unsigned long           in_flight_bytes;
+        unsigned long           thru_bytes;
+        unsigned long           lat_bytes;
 
 	spinlock_t		lock;
 	struct list_head	send_list;
@@ -557,7 +558,7 @@ static int nvme_tcp_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	struct nvme_tcp_ctrl *ctrl = data;
 	struct nvme_tcp_queue *queue = &ctrl->queues[hctx_idx + 1];
 
-	hctx->blk_switch = true;
+	hctx->blk_switch = 1;
 	hctx->driver_data = queue;
 	return 0;
 }
