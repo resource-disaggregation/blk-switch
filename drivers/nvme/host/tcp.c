@@ -42,11 +42,11 @@ static int i10_lat_doorbell __read_mostly = 50;
 module_param(i10_lat_doorbell, int, 0644);
 MODULE_PARM_DESC(i10_lat_doorbell, "i10 delayed doorbell timer (us) for lat");
 
-static int i10_thru_nice __read_mostly = 0;
+static int i10_thru_nice __read_mostly;
 module_param(i10_thru_nice, int, 0644);
 MODULE_PARM_DESC(i10_thru_nice, "i10 thru kthread nice");
 
-static int i10_thru_printk __read_mostly = 0;
+static int i10_thru_printk __read_mostly;
 module_param(i10_thru_printk, int, 0644);
 MODULE_PARM_DESC(i10_thru_printk, "i10 thru kthread nice");
 
@@ -99,8 +99,6 @@ struct nvme_tcp_queue {
 	/* for blk-switch */
         struct work_struct      io_work_lat;
         int                     prio_class;
-        unsigned long           thru_bytes;
-        unsigned long           lat_bytes;
 
 	spinlock_t		lock;
 	struct list_head	send_list;
@@ -302,12 +300,14 @@ static inline void nvme_tcp_advance_req(struct nvme_tcp_request *req,
 }
 
 /* jaehyun */
+/*
 static inline bool i10_host_is_thru_request(struct bio *bio)
 {
 	//return (bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1);
 	return ((bio && IOPRIO_PRIO_CLASS(bio_prio(bio)) != 1) &&
 		task_nice(current) != -1);
 }
+*/
 
 static inline bool i10_host_is_latency(struct nvme_tcp_queue *queue)
 {
@@ -348,7 +348,8 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 	int delayed_doorbell, aggregation_size;
 	bool no_delay = true;
 
-	if (i10_host_is_thru_request(req->curr_bio))
+	//if (i10_host_is_thru_request(req->curr_bio))
+	if (nvme_tcp_queue_id(queue) <= num_online_cpus())
 		queue->prio_class = 0;
 	else
 		queue->prio_class = 1;
@@ -361,10 +362,14 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req)
 		aggregation_size = i10_thru_aggr;
 	}
 
-	//if (req->curr_bio)
-        //      printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d opf %u flags %u q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), req->curr_bio->bi_opf, req->curr_bio->bi_flags, queue->prio_class);
-        //else
-        //      printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d bio null q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), queue->prio_class);
+	if (i10_thru_printk == 2) {
+		if (req->curr_bio)
+			printk(KERN_DEBUG "(pid %d cpu %d nice %d):  ::i10:: bio O (prio %d opf %u) -> qid %d (q_prio %d)", current->pid, current->cpu, task_nice(current), IOPRIO_PRIO_CLASS(bio_prio(req->curr_bio)), req->curr_bio->bi_opf, nvme_tcp_queue_id(queue), queue->prio_class);
+			//printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d opf %u flags %u q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), req->curr_bio->bi_opf, req->curr_bio->bi_flags, queue->prio_class);
+		else
+			printk(KERN_DEBUG "\n(pid %d cpu %d nice %d):  ::i10:: bio X -> qid %d (q_prio %d)\n", current->pid, current->cpu, task_nice(current), nvme_tcp_queue_id(queue), queue->prio_class);
+			//printk(KERN_DEBUG "(pid %d cpu %d nice %d): q_rq req_count %d bio null q_prio %d", current->pid, current->cpu, task_nice(current), atomic_read(&queue->nr_req), queue->prio_class);
+	}
 
 	spin_lock(&queue->lock);
 	list_add_tail(&req->entry, &queue->send_list);
@@ -603,6 +608,11 @@ static int nvme_tcp_process_nvme_cqe(struct nvme_tcp_queue *queue,
 {
 	struct request *rq;
 
+	// jaehyun
+	if (i10_thru_printk == 1)
+                printk(KERN_DEBUG "(pid %d cpu %d nice %d): process_nvme_cqe id %u",
+                        current->pid, current->cpu, task_nice(current), cqe->command_id);
+
 	rq = blk_mq_tag_to_rq(nvme_tcp_tagset(queue), cqe->command_id);
 	if (!rq) {
 		dev_err(queue->ctrl->ctrl.device,
@@ -625,8 +635,9 @@ static int nvme_tcp_handle_c2h_data(struct nvme_tcp_queue *queue,
 
 	// jaehyun
 	//if (i10_host_is_latency(queue))
-	//	printk(KERN_DEBUG "(pid %d cpu %d nice %d): handle c2h_data pdu id %u",
-	//		current->pid, current->cpu, task_nice(current), pdu->command_id);
+	if (i10_thru_printk == 1)
+		printk(KERN_DEBUG "(pid %d cpu %d nice %d): handle c2h_data pdu id %u",
+			current->pid, current->cpu, task_nice(current), pdu->command_id);
 
 	rq = blk_mq_tag_to_rq(nvme_tcp_tagset(queue), pdu->command_id);
 	if (!rq) {
@@ -731,6 +742,11 @@ static int nvme_tcp_handle_r2t(struct nvme_tcp_queue *queue,
 	struct nvme_tcp_request *req;
 	struct request *rq;
 	int ret;
+
+	// jaehyun
+	if (i10_thru_printk == 1)
+                printk(KERN_DEBUG "(pid %d cpu %d nice %d): handle r2t pdu id %u",
+                        current->pid, current->cpu, task_nice(current), pdu->command_id);
 
 	rq = blk_mq_tag_to_rq(nvme_tcp_tagset(queue), pdu->command_id);
 	if (!rq) {
@@ -1315,7 +1331,7 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 		for (i = 0; i < queue->nr_mapped; i++)
 			kunmap(queue->caravan_mapped[i]);
 
-		if (i10_thru_printk)
+		if (i10_thru_printk == 1)
 			printk(KERN_DEBUG "(pid %d cpu %d nice %d):  SEND! cpu %d (q_rq %d c_rq %d)",
 				current->pid, current->cpu, task_nice(current), queue->io_cpu,
 				atomic_read(&queue->nr_req), queue->nr_caravan_req);
@@ -1381,7 +1397,7 @@ enum hrtimer_restart i10_host_doorbell_timeout(struct hrtimer *timer)
 	struct nvme_tcp_queue *queue =
 		container_of(timer, struct nvme_tcp_queue, doorbell_timer);
 
-	if (i10_thru_printk)
+	if (i10_thru_printk == 1)
 		printk(KERN_DEBUG "(pid %d cpu %d nice %d): TIMEOUT -> cpu %d (req %d)!!",
 			current->pid, current->cpu, task_nice(current), queue->io_cpu,
 			atomic_read(&queue->nr_req));
@@ -1414,6 +1430,7 @@ static void nvme_tcp_io_work(struct work_struct *w)
 		int result;
 
 		result = nvme_tcp_try_send(queue);
+		//printk("  ==> (io_work) try_send resut: %d", result);
 		if (result > 0) {
 			pending = true;
 		} else if (unlikely(result < 0)) {
@@ -1454,6 +1471,7 @@ static void nvme_tcp_io_work_lat(struct work_struct *w)
 		int result;
 
 		result = nvme_tcp_try_send(queue);
+		//printk("  ==> (io_work_lat) try_send resut: %d", result);
 		if (result > 0) {
 			pending = true;
 		} else if (unlikely(result < 0)) {

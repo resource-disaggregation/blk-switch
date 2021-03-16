@@ -85,10 +85,6 @@ struct nvme_rdma_queue {
 	struct rdma_cm_id	*cm_id;
 	int			cm_error;
 	struct completion	cm_done;
-
-	// jaehyun
-	unsigned long		thru_bytes;
-	unsigned long		lat_bytes;
 };
 
 struct nvme_rdma_ctrl {
@@ -315,8 +311,7 @@ static int nvme_rdma_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 
 	BUG_ON(hctx_idx >= ctrl->ctrl.queue_count);
 
-	// jaehyun
-	printk("nvme_rdma_init_hctx %u", hctx_idx);
+	/* blk-switch */
 	hctx->blk_switch = 2;
 	hctx->driver_data = queue;
 	return 0;
