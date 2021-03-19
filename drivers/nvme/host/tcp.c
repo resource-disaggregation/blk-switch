@@ -42,11 +42,11 @@ static int i10_lat_doorbell __read_mostly = 50;
 module_param(i10_lat_doorbell, int, 0644);
 MODULE_PARM_DESC(i10_lat_doorbell, "i10 delayed doorbell timer (us) for lat");
 
-static int i10_thru_nice __read_mostly;
+static int i10_thru_nice __read_mostly = 0;
 module_param(i10_thru_nice, int, 0644);
 MODULE_PARM_DESC(i10_thru_nice, "i10 thru kthread nice");
 
-static int i10_thru_printk __read_mostly;
+static int i10_thru_printk __read_mostly = 0;
 module_param(i10_thru_printk, int, 0644);
 MODULE_PARM_DESC(i10_thru_printk, "i10 thru kthread nice");
 
@@ -1250,25 +1250,14 @@ static inline int nvme_tcp_sndbuf_nospace(struct nvme_tcp_queue *queue,
 	return sk_stream_wspace(queue->sock->sk) < length;
 }
 
-static bool i10_host_send_caravan(struct nvme_tcp_queue *queue)
-{
-	/* 1. Caravan becomes full (64KB), or
-	 * 2. No-delay request arrives, or
-	 * 3. No more request remains in i10 queue
-	 */
-	return queue->send_now ||
-		(!hrtimer_active(&queue->doorbell_timer) &&
-		!queue->request && queue->caravan_len);
-}
-
 static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 {
 	struct nvme_tcp_request *req;
 	int ret = 1;
 
 	if (!queue->request) {
-		//queue->request = nvme_tcp_fetch_request(queue);
 		spin_lock(&queue->lock);
+
 		req = list_first_entry_or_null(&queue->send_list,
 			struct nvme_tcp_request, entry);
 		if (req) {
@@ -1286,6 +1275,7 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 			atomic_set(&queue->timer_set, 0);
 			queue->send_now = true;
 		}			
+
 		spin_unlock(&queue->lock);
 
 		if (!queue->request && !queue->caravan_len)
@@ -1307,7 +1297,6 @@ static int nvme_tcp_try_send(struct nvme_tcp_queue *queue)
 	}
 
 	/* i10: pdu aggregation */
-	//if (i10_host_send_caravan(queue)) {
 	if (queue->send_now) {
 		struct msghdr msg = { .msg_flags = MSG_DONTWAIT | MSG_EOR };
 		int i, i10_ret;
