@@ -373,6 +373,8 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	if (blk_switch_nr_cpus <= 0 ||
 	   blk_switch_nr_cpus > num_online_cpus())
 		nr_cpus = num_online_cpus();
+	else
+		nr_cpus = blk_switch_nr_cpus;
 
 	blk_queue_enter_live(q);
 
