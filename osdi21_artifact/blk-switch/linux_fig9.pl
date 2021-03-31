@@ -7,11 +7,11 @@
 @nr_cpus = (1, 2, 3, 4, 5, 6);
 
 ######################################
-# blk-switch setting
+# Linux setting
 ######################################
-$nvme_dev = "/dev/nvme0n1";
+$nvme_dev = "/dev/nvme1n1";
 $tapp_bs = "64k";
-$tapp_qd = 16;
+$tapp_qd = 32;
 
 ######################################
 # script variables

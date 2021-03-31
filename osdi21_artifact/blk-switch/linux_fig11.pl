@@ -6,11 +6,11 @@
 @read_ratio = (100, 75, 50, 25, 0);
 
 ######################################
-# blk-switch setting
+# Linux setting
 ######################################
-$nvme_dev = "/dev/nvme0n1";
+$nvme_dev = "/dev/nvme1n1";
 $tapp_bs = "64k";
-$tapp_qd = 16;
+$tapp_qd = 32;
 
 ######################################
 # script variables
