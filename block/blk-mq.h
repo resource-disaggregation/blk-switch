@@ -35,9 +35,6 @@ struct blk_mq_ctx {
 	struct request_queue	*queue;
 	struct blk_mq_ctxs      *ctxs;
 	struct kobject		kobj;
-
-	/* blk-switch: for app-steering interval */
-	unsigned long		last_appstr;
 } ____cacheline_aligned_in_smp;
 
 void blk_mq_exit_queue(struct request_queue *q);
@@ -116,9 +113,9 @@ static inline struct blk_mq_hw_ctx *blk_mq_map_queue(struct request_queue *q,
 		type = HCTX_TYPE_POLL;
 	//else if ((flags & REQ_OP_MASK) == REQ_OP_READ)
 	//	type = HCTX_TYPE_READ;
-	/* blk-switch: type for latency-sensitive apps */
+	/*  blk-switch: type for latency-sensitive apps */
 	else if (flags & REQ_PRIO && !(flags & REQ_FUA))
-		type = HCTX_TYPE_READ;
+		type = HCTX_TYPE_READ;	
 
 	return ctx->hctxs[type];
 }

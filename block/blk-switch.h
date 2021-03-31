@@ -15,49 +15,45 @@
 #include <linux/random.h>
 #include <linux/sched/task.h>
 
+#define BLK_SWITCH_NR_CPUS		64
+
 #define BLK_SWITCH_RESET_METRICS	1000	// 1000ms
 #define BLK_SWITCH_APPSTR_INTERVAL	10	// 10ms
 #define BLK_SWITCH_TCP_BATCH		16
+#define BLK_SWITCH_THRESH_L		98304	// (24*4096) bytes
 
 static int blk_switch_on __read_mostly;
 module_param(blk_switch_on, int, 0644);
 MODULE_PARM_DESC(blk_switch_on, "0: prio, 1: +reqstr, 2: +appstr ");
 
-static int blk_switch_thresh_B __read_mostly = 16;
+static int blk_switch_thresh_B __read_mostly = 8;
 module_param(blk_switch_thresh_B, int, 0644);
 MODULE_PARM_DESC(blk_switch_thresh_B, "blk-switch threshold for B");
 
-static int blk_switch_thresh_L __read_mostly = 98304;	// (24*4096) bytes
-module_param(blk_switch_thresh_L, int, 0644);
-MODULE_PARM_DESC(blk_switch_thresh_L, "blk-switch threshold for L*");
-
-static int blk_switch_nr_cpus __read_mostly = 24;
+static int blk_switch_nr_cpus __read_mostly;
 module_param(blk_switch_nr_cpus, int, 0644);
-MODULE_PARM_DESC(blk_switch_nr_cpus, "blk-switch nr cpus");
+MODULE_PARM_DESC(blk_switch_nr_cpus, "blk-switch nr_cpus");
 
 static int blk_switch_debug __read_mostly;
 module_param(blk_switch_debug, int, 0644);
 MODULE_PARM_DESC(blk_switch_debug, "blk-switch printk on/off");
 
-static int blk_switch_new __read_mostly = 1;
-module_param(blk_switch_new, int, 0644);
-MODULE_PARM_DESC(blk_switch_new, "blk-switch printk on/off");
-
-unsigned long blk_switch_thru_bytes[NR_CPUS] = {0};
-unsigned long blk_switch_lat_bytes[NR_CPUS] = {0};
-unsigned long blk_switch_metric_thru[NR_CPUS] = {0};		// T_(cur_cpu)
-unsigned long blk_switch_metric_lat[NR_CPUS] = {0};		// L_(cur_cpu)
-unsigned long blk_switch_appstr_T[NR_CPUS] = {0};
-unsigned long blk_switch_appstr_L[NR_CPUS] = {0};
+unsigned long blk_switch_T_bytes[BLK_SWITCH_NR_CPUS] = {0};
+unsigned long blk_switch_L_bytes[BLK_SWITCH_NR_CPUS] = {0};
+unsigned long blk_switch_T_metric[BLK_SWITCH_NR_CPUS] = {0};	// T_(cur_cpu)
+unsigned long blk_switch_L_metric[BLK_SWITCH_NR_CPUS] = {0};	// L_(cur_cpu)
+unsigned long blk_switch_T_appstr[BLK_SWITCH_NR_CPUS] = {0};
+unsigned long blk_switch_L_appstr[BLK_SWITCH_NR_CPUS] = {0};
 
 unsigned long blk_switch_reset_metrics = 0;
 unsigned long blk_switch_last_appstr = 0;
 int blk_switch_appstr_app = 0;
 
 /* stats for req-steering */
-int blk_switch_stats_generated[6] = {0, 0, 0, 0, 0, 0};
-int blk_switch_stats_steered[6] = {0, 0, 0, 0, 0, 0};
-int blk_switch_stats_processed[6] = {0, 0, 0, 0, 0, 0};
+int blk_switch_stats_print[BLK_SWITCH_NR_CPUS] = {0};
+int blk_switch_stats_gen[BLK_SWITCH_NR_CPUS] = {0};
+int blk_switch_stats_str[BLK_SWITCH_NR_CPUS] = {0};
+int blk_switch_stats_prc[BLK_SWITCH_NR_CPUS] = {0};
 
 enum blk_switch_ioprio {
 	BLK_SWITCH_T_APP = 0,
@@ -111,6 +107,9 @@ struct nvme_tcp_queue {
 	int                     nr_iovs;
 	bool                    send_now;
 	int                     nr_caravan_req;
+
+	struct page		**caravan_mapped;
+	int			nr_mapped;
 
 	/* jaehyun: For i10 delayed doorbells */
 	atomic_t                nr_req;
