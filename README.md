@@ -53,7 +53,7 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel [5.4.43]
 We assume that the target server has storage devices such as NVMe SSD (/dev/nvme0n1) or RAM block device (/dev/ram0) via i10.
 
 - Please refer to "[HowTo Configure NVMe over Fabrics](https://community.mellanox.com/s/article/howto-configure-nvme-over-fabrics)" for more information about NVMe-over-Fabrics configurations.
-- Please refer to "HowTo Configure i10 host/target](https://github.com/i10-kernel/i10-implementation/edit/master/README.md)
+- Please refer to "[HowTo Configure i10 host/target](https://github.com/i10-kernel/i10-implementation/edit/master/README.md)"
 
 ### CFS configuration
 We set the "target latency" parameter to 100μs:
