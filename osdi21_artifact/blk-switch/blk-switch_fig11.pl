@@ -19,7 +19,7 @@ $n_input = @read_ratio;
 $repeat = 1;
 
 # Run
-print("## Figure 11. blk-switch ##\n");
+print("## Figure 11. blk-switch ##\n\n");
 
 for($i=0; $i<$n_input; $i++)
 {

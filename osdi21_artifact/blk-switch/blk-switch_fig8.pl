@@ -18,7 +18,7 @@ $n_input = @tapp_qd;
 $repeat = 1;
 
 # Run
-print("## Figure 8. blk-switch ##\n");
+print("## Figure 8. blk-switch ##\n\n");
 
 for($i=0; $i<$n_input; $i++)
 {

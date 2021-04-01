@@ -6,11 +6,12 @@ if ($argc < 4) {exit;}
 ####################################
 # Script parameters
 ####################################
+$target = "jaehyun\@128.84.155.115";
 $nvme_dev = $ARGV[0];
 $total_nr_cpus = 24;
 $nr_cpus = 6;
 $cpus = "0,4,8,12,16,20";
-$runtime = 7;
+$runtime = 60;
 $runtime_cpu = $runtime - 2;
 $runtime_total = $runtime + 5;
 $nr_lapps = 6;
@@ -64,6 +65,7 @@ $fio_tapps = "fio --filename=${nvme_dev} " .
 	"> result_tapp";
 
 $cpu_util = "sar -u ${runtime_cpu} 1 > result_cpu";
+$cpu_util_t = "ssh ${target} 'sar -u ${runtime_cpu} 1' > result_cpu_t";
 
 #######################
 # 1. Run
@@ -72,8 +74,10 @@ system("$fio_lapps &");
 system("$fio_tapps &");
 system("sleep 1");
 system("$cpu_util &");
+system("$cpu_util_t &");
 system("sleep ${runtime_total}");
 system("grep Average result_cpu > result_cpu2");
+system("grep Average result_cpu_t > result_cpu_t2");
 
 ###########################
 # 2. Read results
@@ -93,7 +97,12 @@ my $result = open my $fh, "<", $f;
 my $result_cpu = readline $fh;
 close $fh;
 
-system("rm result_lapp result_tapp result_cpu result_cpu2");
+my $f = "result_cpu_t2";
+my $result = open my $fh, "<", $f;
+my $result_cpu_t = readline $fh;
+close $fh;
+
+system("rm result_lapp result_tapp result_cpu result_cpu2 result_cpu_t result_cpu_t2");
 
 #######################
 # 3. Parse and Print
@@ -114,7 +123,15 @@ $tapp_thru = $tapp_thru_read + $tapp_thru_write;
 
 # result_cpu
 @attr = split(/\s+/, $result_cpu);
-$cpu_all = (100.0 - $attr[7]) * $total_nr_cpus;
+$cpu_all_h = (100.0 - $attr[7]) * $total_nr_cpus;
+@attr = split(/\s+/, $result_cpu_t);
+$cpu_all_t = (100.0 - $attr[7]) * $total_nr_cpus;
+
+if ($cpu_all_h >= $cpu_all_t) {
+	$cpu_all = $cpu_all_h;
+} else {
+	$cpu_all = $cpu_all_t;
+}
 
 $total_thru = $lapp_thru + $tapp_thru;
 $thru_per_core = $total_thru / $cpu_all * 100;

@@ -19,7 +19,7 @@ $n_input = @nr_lapps;
 $repeat = 1;
 
 # Run
-print("## Figure 7. Linux ##\n");
+print("## Figure 7. Linux ##\n\n");
 
 for($i=0; $i<$n_input; $i++)
 {

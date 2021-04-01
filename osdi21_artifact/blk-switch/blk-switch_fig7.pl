@@ -3,7 +3,8 @@
 ######################################
 # Figure 7 setting
 ######################################
-@nr_lapps = (6, 12, 24);
+@nr_lapps = (6);
+#@nr_lapps = (6, 12, 24);
 
 ######################################
 # blk-switch setting
@@ -19,7 +20,7 @@ $n_input = @nr_lapps;
 $repeat = 1;
 
 # Run
-print("## Figure 7. blk-switch ##\n");
+print("## Figure 7. blk-switch ##\n\n");
 
 for($i=0; $i<$n_input; $i++)
 {
