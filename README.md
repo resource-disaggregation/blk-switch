@@ -142,12 +142,14 @@ We assume that Target server has null-block devices (/dev/nullb0) and/or NVMe SS
    - xxx.xxx.xxx.xxx: Target IP address
    - protocol name: "tcp", "i10", etc.
 
-   Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-blk devices):
+Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-blk devices):
+
    ```
    cd ~
    cd blk-switch/scripts/
    ./target_null
    ```
+   Edit the "target_null" script to modify the null-blk parameter and target IP address.
    
 ### Host configuration
 
@@ -173,7 +175,7 @@ We assume that Target server has null-block devices (/dev/nullb0) and/or NVMe SS
    nvme connect -t (protocol name) -n (subsystem name) -a (target IP address) -s 4420 -q nvme_tcp_host -W (num of cores)
    ```
    
-   Or, you can use our script for a quick setup to connect to the remote null-blk device:
+Or, you can use our script for a quick setup:
 
    ```
    cd ~
@@ -220,9 +222,9 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ./host_i10_null
    ./toy_example_linux
    ```
-   Modify "toy_example_i10" if the remote device for pure i10 is not "/dev/nvme1n1".
+   Modify "toy_example_linux" if the remote device for pure i10 is not "/dev/nvme1n1".
   
-5. Validate results:
+5. Validate results (see output files):
 
    If system has multiple cores per socket,
       - L-app is isolated by blk-switch achieving lower latency than Linux.
