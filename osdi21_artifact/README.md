@@ -7,6 +7,8 @@ Our hardware configurations used in the paper are:
 - NIC: Mellanox ConnectX-5 Ex VPI (100Gbps)
 - NVMe SSD: 1.6TB Samsung PM1725a
 
+(Should describe expected performance degradation if the same hardware is not available.)
+
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
 
