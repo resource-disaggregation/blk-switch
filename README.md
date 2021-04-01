@@ -175,13 +175,13 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
    nvme connect -t (protocol name) -n (subsystem name) -a (target IP address) -s 4420 -q nvme_tcp_host -W (num of cores)
    ```
    
-Or, you can use our script for a quick setup:
+   Or, you can use our script for a quick setup:
 
-   ```
-   cd ~
-   cd blk-switch/scripts/
-   ./host_tcp_null
-   ```
+      ```
+      cd ~
+      cd blk-switch/scripts/
+      ./host_tcp_null
+      ```
 
 4. Find the remote storage (e.g., /dev/nvme1n1):
 
