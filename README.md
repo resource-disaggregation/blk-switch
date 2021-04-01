@@ -5,7 +5,7 @@ blk-switch is a redesign of the Linux kernel storage stack that achieves μs-sca
 - Application steering: avoids persistent congestion (switch scheduling)
 
 ## Setup instructions (with root)
-We assume the kernel source tree is downloaded in /usr/src/linux-5.4.43/. You should overwrite the blk-switch code to the kernel source tree and compile the kernel to install blk-switch.
+blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel [5.4.43](https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.43.tar.gz). We assume the kernel source tree is downloaded in /usr/src/linux-5.4.43/. You should overwrite the blk-switch code to the kernel source tree and compile the kernel to install blk-switch.
 
 1. Download blk-switch kernel source code and copy to the kernel source tree:
 
