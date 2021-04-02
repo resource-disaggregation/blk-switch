@@ -77,11 +77,5 @@ The default remote device names for blk-switch are "**/dev/nvme0n1**" for null-b
    ./blk-switch/blk-switch_fig11.pl
    ```
 
-### Caladan Evaluation
-(To be updated)
-
 ### SPDK Evaluation
 Please refer to README in spdk/ folder
-
-### blk-switch Performance Breakdown (Figure 13)
-(To be updated)
