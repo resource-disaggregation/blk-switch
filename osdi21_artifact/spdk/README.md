@@ -1,6 +1,6 @@
 # SPDK Evaluation
 
-Fetch and build SPDK
+### Fetch and build SPDK
 ```
 git submodule update --init --recursive
 cd spdk
@@ -10,22 +10,22 @@ make
 cd ..
 ```
 
+### Sytems configuration
 Network stack configuration
 [TODO: Enable TSO/GRO, Jumbo frames, aRFS]
-
-Prepare environment for running experiements
+Disable hyperthreading
 ```
-./prepare_env.sh
-TODO: put the following in the above script
-sudo sysctl -w net.core.rmem_max=268435456
-sudo sysctl -w net.core.wmem_max=268435456 
-sudo sysctl -w net.ipv4.tcp_rmem="4096 87380 134217728"
-sudo sysctl -w net.ipv4.tcp_wmem="4096 65536 134217728"
-echo 0 | sudo tee /proc/sys/kernel/sched_autogroup_enabled
-sudo scripts/setup.sh
+echo off | sudo tee /sys/devices/system/cpu/smt/control
+```
+### Prepare environment for running experiements
+```
+sudo ./prepare_env.sh
 ```
 
-Run storage server on the target-side
+### Run storage server on the target machine
+```
+sudo ./run_target.sh 0x333333 192.168.10.115
+```
 
-Run experiments
+### Run experiments
 
