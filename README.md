@@ -148,9 +148,14 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
    ```
    cd ~
    cd blk-switch/scripts/
-   ./target_null
+   ./env_setup
+   ./target_null.sh
    ```
-   Edit the "target_null" script to modify the null-blk parameter and target IP address.
+   **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**
+   You can type this to get the number of cores of your system:
+      ```
+      lscpu | grep ‘CPU(s)’
+      ```
    
 ### Host configuration
 
@@ -181,8 +186,10 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
       ```
       cd ~
       cd blk-switch/scripts/
-      ./host_tcp_null
+      ./env_setup
+      ./host_tcp_null.sh
       ```
+      **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**
 
 4. Find the remote storage (e.g., /dev/nvme1n1):
 
@@ -211,19 +218,19 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ```
    cd ~
    cd blk-switch/scripts/
-   ./toy_example_blk-switch
+   ./toy_example_blk-switch.sh
    ```
-   Modify "toy_example_blk-switch" if the remote device for blk-switch is not "/dev/nvme0n1".
+   NOTE: Edit "toy_example_blk-switch.sh" if your remote null-blk device for blk-switch is not "/dev/nvme0n1".
   
 4. Compare with Linux (pure i10 without blk-switch):
 
    ```
    cd ~
    cd blk-switch/scripts/
-   ./host_i10_null
-   ./toy_example_linux
+   ./host_i10_null.sh
+   ./toy_example_linux.sh
    ```
-   Modify "toy_example_linux" if the remote device for pure i10 is not "/dev/nvme1n1".
+   NOTE: Edit "toy_example_linux.sh" if your remote null-blk device for pure i10 is not "/dev/nvme1n1".
   
 5. Validate results (see output files):
 
