@@ -12,7 +12,6 @@ function cleanup() {
     echo "Cleaned up";
 }
 
-trap cleanup EXIT
 
 function arr_to_str() {
     data=$1
