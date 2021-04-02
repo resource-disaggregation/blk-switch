@@ -55,7 +55,7 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
    ```
    "x.x.x" is a kernel version. It can be your current kernel version or latest version your system has. Type "uname -r" to see your current kernel version.  
  
-   Add your name in the kernel version.
+   Edit ".config" file to include your name in the kernel version.
    ```
    vi .config
    (in the file)
