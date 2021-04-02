@@ -18,7 +18,7 @@ For simplicity, we assume that users have two physical servers (Host and Target)
 ### Getting Started Guide
 Through the following three sections, we provide getting started instructions to install blk-switch and to run experiments.
 
-   - **Build blk-switch Kernel (10 human-mins + 30 compute-mins + 3 reboot-mins):**  
+   - **Build blk-switch Kernel (10 human-mins + 30 compute-mins + 5 reboot-mins):**  
 blk-switch is currently implemented in the core part of Linux kernel storage stack (blk-mq at block device layer), so it requires kernel compilation and system reboot into the blk-switch kernel. This section covers how to build the blk-switch kernel and i10/nvme-tcp kernel modules. 
    - **Setup Remote Storage Devices (5 human-mins):**  
 This section covers how to setup remote storage devices using i10/nvme-tcp kernel modules.
