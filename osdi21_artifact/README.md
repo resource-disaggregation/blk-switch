@@ -18,8 +18,8 @@ Now we provide how to use our scripts to reproduce the results in the paper.
 You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you can skip those scripts.
 
 1. At Target:  
- Check if your system has NVMe SSD devices. Type "nvme list" and see if there is "/dev/nvme0n1".  
- If your system does not have "/dev/nvme0n1", we will skip "target_ssd.sh" and use only RAM device (null-blk) below.
+ Check if your Target has physical NVMe SSD devices. Type "nvme list" and see if there is "**/dev/nvme0n1**".  
+ If your Target does not have "**/dev/nvme0n1**", we will skip "**target_ssd.sh**" and will use only RAM device (null-blk) below.
 
    ```
    cd ~
@@ -32,7 +32,7 @@ You should be root from now on. If you already ran some configuration scripts be
    ```
    
 2. At Host:  
- Also we will skip "host_tcp_ssd.sh" and "host_i10_ssd.sh" if your TARGET server does not have NVMe SSD.
+ Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSDs.
  After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
    ```
    cd ~
