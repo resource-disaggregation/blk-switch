@@ -7,6 +7,18 @@ Our hardware configurations used in the paper are:
 - NIC: Mellanox ConnectX-5 Ex VPI (100Gbps)
 - NVMe SSD: 1.6TB Samsung PM1725a
 
+[**Caveats of our work**]
+- Our work has been evaluated with 100Gbps NICs and 4-socket multi-core CPUs. Performance degradation is expected if the above hardware configuration is not available.
+- As described in the paper, we mainly use 6 cores in NUMA0 and their core numbers, 0, 4, 8, 12, 16, 20, are used through the evaluation scripts. These numbers should be changed if the systems have different number of NUMA nodes:
+   ```
+   lscpu | grep 'CPU(s)'
+   
+   CPU(s):                24
+   On-line CPU(s) list:   0-23
+   NUMA node0 CPU(s):     0,4,8,12,16,20
+   ...
+   ```
+
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
 
@@ -15,7 +27,7 @@ Now we provide how to use our scripts to reproduce the results in the paper.
 - If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
-You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you should skip those scripts (**target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**).
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts (**target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**).
 
 **(Don't forget to be root)**
 
@@ -34,6 +46,15 @@ You should be root from now on. If you already ran some configuration scripts be
    ```
    **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
+   
+   The below error messages from system_setup.sh is normal. Please ignore them.
+   ```
+   Cannot get device udp-fragmentation-offload settings: Operation not supported
+   Cannot get device udp-fragmentation-offload settings: Operation not supported
+   ```
+   
+   If you ran "**target_null.sh**" twice by mistake and got several errors like "Permission denied", please reboot the both servers and restart from "Run configuration scripts".
+   
    
 2. At Host:  
  Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSD devices.
