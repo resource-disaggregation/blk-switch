@@ -118,6 +118,8 @@ We will compare two systems in the toy-experiment section, "blk-switch" and "Lin
 
 We now configure RAM null-blk device as a remote storage device at Target server. 
 
+**(Don't forget to be root)**
+
 ### Target configuration
 (In step 4, we provide a script that covers steps 1--3, so please go to step 4 if you want to skip steps 1--3)
 
@@ -218,6 +220,8 @@ We now configure RAM null-blk device as a remote storage device at Target server
 ## 4. Run Toy-experiments
 At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nvme0n1). 
 
+**(Don't forget to be root)**
+
 1. Install FIO
 
    ```
@@ -252,4 +256,4 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
       - L-app is isolated by blk-switch achieving lower latency than Linux.
       - T-app uses more CPU resources by blk-switch achieving higher throughput than Linux.
 
-**To run more evaluation scripts:** refer to "[osdi21_artifact/](https://github.com/resource-disaggregation/blk-switch/tree/master/osdi21_artifact)".
+**To continue the artifact evaluation:** please go to "[osdi21_artifact/](https://github.com/resource-disaggregation/blk-switch/tree/master/osdi21_artifact)".
