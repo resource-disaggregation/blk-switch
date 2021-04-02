@@ -19,7 +19,7 @@ fio --filename=$nvme_dev \
 	--cpus_allowed=0 \
 	--numjobs=1 \
 	--prioclass=1 \
-	--group_reporting > output_lapp_linux &
+	--group_reporting > output_linux_lapp &
 
 # Run T-app
 fio --filename=$nvme_dev \
@@ -37,7 +37,7 @@ fio --filename=$nvme_dev \
         --cpus_allowed=0 \
         --numjobs=1 \
         --prioclass=0 \
-        --group_reporting > output_tapp_linux &
+        --group_reporting > output_linux_tapp &
 
 sleep 10
 
