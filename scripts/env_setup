@@ -1,0 +1,3 @@
+export TARGET_INF=enp37s0f1
+export TARGET_IP=192.168.10.115
+export NR_CORES=24
