@@ -82,42 +82,48 @@ If this is your case, then you are safe to go. If this is not the case for your 
 1. Figure 7: Increasing L-app load (6 mins):
 
    ```
-   ./blk-switch/linux_fig7.pl
-   ./blk-switch/blk-switch_fig7.pl
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig7.pl
+   ./blk-switch_fig7.pl
    ```
 
 2. Figure 8: Increasing T-app load (12 mins):
 
    ```
-   ./blk-switch/linux_fig8.pl
-   ./blk-switch/blk-switch_fig8.pl
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig8.pl
+   ./blk-switch_fig8.pl
    ```
 
 3. Figure 9: Varying number of cores (20 mins):
 
    ```
-   ./blk-switch/linux_fig9.pl
-   ./blk-switch/blk-switch_fig9.pl
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig9.pl
+   ./blk-switch_fig9.pl
    ```
 
 4. Figure 10: SSD results corresponding to Figure 7 (6 mins):
 
    ```
-   ./blk-switch/linux_fig10.pl
-   ./blk-switch/blk-switch_fig10.pl
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig10.pl
+   ./blk-switch_fig10.pl
    ```
 
 5. Figure 11: Increasing read ratio (10 mins):
   
    ```
-   ./blk-switch/linux_fig11.pl
-   ./blk-switch/blk-switch_fig11.pl
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig11.pl
+   ./blk-switch_fig11.pl
    ```
 
 ### Figure 13: blk-switch Performance Breakdown (~1 min)
 To reproduce Figure 13 results, we will run four experiments named "**Linux**", "**Linux+P**", "**Linux+P+RS**", "**Linux+P+RS+AS**", and "**(Extra)**". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when a new experiment starts.
    ```
-   ./blk-switch/blk-switch_fig13.pl
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./blk-switch_fig13.pl
    ```
 
 After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for "**Linux+P+RS+AS**" (Figure 13f) and the 7th line shows how L-app moves. The next last 6 lines are for "**Linux+P+RS**" (Figure 13e). For each core, the kernel logs mean:
