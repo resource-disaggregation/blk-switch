@@ -7,6 +7,7 @@ cd spdk
 sudo scripts/pkgdep.sh
 ./configure
 make
+cd ..
 ```
 
 Network stack configuration
