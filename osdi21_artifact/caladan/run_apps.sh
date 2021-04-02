@@ -55,9 +55,9 @@ sleep 10;
 for ((i = 1 ; i <= $num_thru ; i++)); do
     if [ -z "$read_p" ]; 
     then 
-        sudo apps/bench/storage_client "thru$i.config" 192.168.10.$((150+$i)):5000 $thru_sz $thru_qd $duration 1 100 > ~/shenango-eval/$outlabel.thru$i.txt 2>&1 &
+        sudo caladan-code/apps/bench/storage_client "thru$i.config" 192.168.10.$((150+$i)):5000 $thru_sz $thru_qd $duration 1 100 > ~/shenango-eval/$outlabel.thru$i.txt 2>&1 &
     else 
-        sudo apps/bench/storage_client "thru$i.config" 192.168.10.$((150+$i)):5000 $thru_sz $thru_qd $duration 1 $read_p > ~/shenango-eval/$outlabel.thru$i.txt 2>&1 &
+        sudo caladan-code/apps/bench/storage_client "thru$i.config" 192.168.10.$((150+$i)):5000 $thru_sz $thru_qd $duration 1 $read_p > ~/shenango-eval/$outlabel.thru$i.txt 2>&1 &
     fi
     pids+=($!);
     echo "Launched thru$i";
@@ -65,7 +65,7 @@ done
 
 # Lat-apps
 for ((i = 1 ; i <= $num_lat ; i++)); do
-    sudo apps/bench/storage_client "lat$i.config" $lat_target $lat_sz $lat_qd $duration 1 100 > ~/shenango-eval/$outlabel.lat$i.txt 2>&1 &
+    sudo caladan-code/apps/bench/storage_client "lat$i.config" $lat_target $lat_sz $lat_qd $duration 1 100 > ~/shenango-eval/$outlabel.lat$i.txt 2>&1 &
     pids+=($!);
     echo "Launched lat$i";
 done
