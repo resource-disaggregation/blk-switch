@@ -19,6 +19,7 @@ $n_input = @nr_lapps;
 $repeat = 1;
 
 # Run
+system("echo 2 > /sys/module/blk_mq/parameters/blk_switch_on");
 print("## Figure 7. blk-switch ##\n\n");
 
 for($i=0; $i<$n_input; $i++)

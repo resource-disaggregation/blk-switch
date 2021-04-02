@@ -10,6 +10,7 @@ blk-switch is a redesign of the Linux kernel storage stack that achieves μs-sca
 - *drivers/nvme/* includes remote storage stack kernel modules such as i10 and NVMe-over-TCP (nvme-tcp).
 - *include/linux* includes small changes in some headers for blk-switch and i10.
 - *osdi21_artifact/* includes scripts for OSDI21 artifact evaluation.
+- *scripts/* includes scripts for getting started instructions.
 
 ### System overview
 For simplicity, we assume that users have two physical servers (Host and Target) connected with each other over networks. Target server has actual storage devices (e.g., RAM block device, NVMe SSD, etc.), and Host server accesses the Target-side storage devices via the remote storage stack (e.g., i10, nvme-tcp) over the networks. Then Host server runs latency-sensitive applications (L-apps) and throughput-bound applications (T-apps) using standard I/O APIs (e.g., Linux AIO). Meanwhile, blk-switch plays a role for providing μs-latency and high throughput at the kernel block device layer.
@@ -147,10 +148,15 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
    ```
    cd ~
    cd blk-switch/scripts/
-   ./target_null
+   (see NOTE below)
+   ./env_setup
+   ./target_null.sh
    ```
-   Edit the "target_null" script to modify the null-blk parameter and target IP address.
-   
+
+   **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
+   You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
+
+
 ### Host configuration
 
 1. Install NVMe utility (nvme-cli):
@@ -180,10 +186,14 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
       ```
       cd ~
       cd blk-switch/scripts/
-      ./host_tcp_null
+      (see NOTE below)
+      ./env_setup
+      ./host_tcp_null.sh
       ```
+      **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
+      You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
 
-4. Find the remote storage (e.g., /dev/nvme1n1):
+4. Check the remote storage device we create (e.g., /dev/nvme0n1):
 
    ```
    nvme list
@@ -199,32 +209,28 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ```
    Or refer to https://github.com/axboe/fio to install the latest version.
 
-2. Set CFS "target latency" parameter to 100μs to lower minimum timeslice:
-
-   ```
-   echo 100000000 > /proc/sys/kernel/sched_latency_ns
-   ```
-
-3. Run one L-app and one T-app on a core:
+2. Run one L-app and one T-app on a core:
 
    ```
    cd ~
    cd blk-switch/scripts/
-   ./toy_example_blk-switch
+   (see NOTE below)
+   ./toy_example_blk-switch.sh
    ```
-   Modify "toy_example_blk-switch" if the remote device for blk-switch is not "/dev/nvme0n1".
+   NOTE: Edit "toy_example_blk-switch.sh" if your remote null-blk device created above for blk-switch is not "/dev/nvme0n1".
   
-4. Compare with Linux (pure i10 without blk-switch):
+3. Compare with Linux (pure i10 without blk-switch):
 
    ```
    cd ~
    cd blk-switch/scripts/
-   ./host_i10_null
-   ./toy_example_linux
+   ./host_i10_null.sh
+   (see NOTE below)
+   ./toy_example_linux.sh
    ```
-   Modify "toy_example_linux" if the remote device for pure i10 is not "/dev/nvme1n1".
+   NOTE: Check the remote storage device name newly added after executing "host_i10_null.sh". We assume it is "/dev/nvme1n1". Edit "toy_example_linux.sh" if not.
   
-5. Validate results (see output files):
+4. Validate results (see output files):
 
    If system has multiple cores per socket,
       - L-app is isolated by blk-switch achieving lower latency than Linux.
