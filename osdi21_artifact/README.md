@@ -24,8 +24,8 @@ You should be root from now on. If you already ran some configuration scripts be
  If your Target does not have "**/dev/nvme0n1**", we will skip "**target_ssd.sh**" and will configure only RAM device (null-blk) below.
 
    ```
-   cd ~
-   cd blk-switch/scripts/
+   sudo -s
+   cd ~/blk-switch/scripts/
    (Edit "system_env.sh" first if needed)
    ./system_setup.sh
    ./target_null.sh
@@ -37,8 +37,8 @@ You should be root from now on. If you already ran some configuration scripts be
  Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSD devices.
  After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
    ```
-   cd ~
-   cd blk-switch/scripts/
+   sudo -s
+   cd ~/blk-switch/scripts/
    (Edit "system_env.sh" first if needed)
    ./system_setup.sh
    ./host_tcp_null.sh
