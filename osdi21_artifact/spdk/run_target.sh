@@ -1,8 +1,10 @@
 #!/bin/bash
 
+source config.sh
+
 core_bitmap=$1
-ip_addr=$2
-ssd_addr=${3-none}
+ip_addr=$IP_ADDR
+ssd_addr=$SSD_ADDR
 
 
 echo "SSD: $ssd_addr";
