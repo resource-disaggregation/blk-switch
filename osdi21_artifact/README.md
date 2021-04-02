@@ -14,7 +14,7 @@ If you miss the [getting started instruction](https://github.com/resource-disagg
 ### Run configuration scripts (with root)
 You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you can skip those scripts.
 
-1. At Target:
+1. At Target:  
  Check if your system has NVMe SSD devices. Type "nvme list" and see if there is "/dev/nvme0n1" or more; they are NVMe SSDs.  
  Please run "target_ssd.sh" below only when your system has "/dev/nvme0n1". Or we will use only RAM device.
 
@@ -28,7 +28,7 @@ You should be root from now on. If you already ran some configuration scripts be
    ./scripts/target_ssd.sh
    ```
    
-2. At Host:
+2. At Host:  
  Check if your system has NVMe SSD devices. Type "nvme list" and see if there is "/dev/nvme0n1" or more; they are NVMe SSDs.  
  After running the scripts below, you will see that 2-4 more remote storage devices are created via "nvme list".
    ```
