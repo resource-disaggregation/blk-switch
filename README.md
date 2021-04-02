@@ -154,10 +154,7 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
 
    **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
    You can type this to get the number of cores of your system:  
-   
-       ```
        lscpu | grep ‘CPU(s)’
-       ```
    
 ### Host configuration
 
