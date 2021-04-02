@@ -21,7 +21,7 @@ num_use_cores="${10}"
 buffer_duration=10
 
 function cleanup() {
-    spdk/build/examples/perf;
+    killall spdk/build/examples/perf;
     echo "Cleaned up";
 }
 
