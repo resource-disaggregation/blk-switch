@@ -38,3 +38,27 @@ sudo ./run_target.sh 0x333333 192.168.10.115
 
 ### Run experiments
 
+```
+sudo ./spdk_fig7.sh
+sudo ./collect_fig7.sh
+```
+
+```
+sudo ./spdk_fig8.sh
+sudo ./collect_fig8.sh
+```
+
+```
+sudo ./spdk_fig9.sh
+sudo ./collect_fig9.sh
+```
+
+```
+sudo ./spdk_fig10.sh
+sudo ./collect_fig10.sh
+```
+
+```
+sudo ./spdk_fig11.sh
+sudo ./collect_fi1.sh
+```
