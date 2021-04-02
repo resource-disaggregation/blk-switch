@@ -9,6 +9,7 @@ Our hardware configurations used in the paper are:
 
 [**Caveats of our work**]
 - Our work has been evaluated with 100Gbps NICs and 4-socket multi-core CPUs. Performance degradation is expected if the above hardware configuration is not available.
+- **system_setup.sh** includes Mellanox NIC-specific configuration (e.g., enabling aRFS).
 - As described in the paper, we mainly use 6 cores in NUMA0 and their core numbers, 0, 4, 8, 12, 16, 20, are used through the evaluation scripts. These numbers should be changed if the systems have different number of NUMA nodes:
    ```
    lscpu | grep 'CPU(s)'
@@ -27,7 +28,7 @@ Now we provide how to use our scripts to reproduce the results in the paper.
 - If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
-You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts **target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**.
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts -- **target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**.
 
 **(Don't forget to be root)**
 
@@ -44,10 +45,10 @@ You should be root from now on. If you already ran some configuration scripts be
    (Run below only when your system has NVMe SSD)
    ./target_ssd.sh
    ```
-   **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
+   **NOTE: please edit "system_env.sh" to specify Target IP address, interface name, and number of cores before running the following scripts.**
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
    
-   The below error messages from system_setup.sh is normal. Please ignore them.
+   The below error messages from **system_setup.sh** is normal. Please ignore them.
    ```
    Cannot get device udp-fragmentation-offload settings: Operation not supported
    Cannot get device udp-fragmentation-offload settings: Operation not supported
@@ -70,7 +71,7 @@ You should be root from now on. If you already ran some configuration scripts be
    ./host_tcp_ssd.sh
    ./host_i10_ssd.sh
    ```
-   **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
+   **NOTE: please edit "system_env.sh" to specify Target IP address, interface name, and number of cores before running the following scripts.**
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
 
 ### Linux and blk-switch Evaluation (with root)
