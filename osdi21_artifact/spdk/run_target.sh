@@ -24,6 +24,8 @@ cleanup;
 
 spdk/build/bin/nvmf_tgt -m $core_bitmap &
 
+sleep 10; 
+
 # Null bdev
 spdk/scripts/rpc.py bdev_null_create Null0 $((16777216)) 4096
 spdk/scripts/rpc.py bdev_null_create Null1 $((16777216)) 4096
