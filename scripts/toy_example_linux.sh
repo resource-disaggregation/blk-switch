@@ -1,6 +1,6 @@
 #!/bin/bash
 
-nvme_dev='/dev/nvme1n1';
+nvme_dev='/dev/nvme2n1';
 echo 0 > /sys/module/blk_mq/parameters/blk_switch_on
 
 # Run L-app
