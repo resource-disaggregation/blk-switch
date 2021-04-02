@@ -12,6 +12,6 @@ IP_ADDR="192.168.10.115"
 # One way to look for SSDs is to run `lspci | grep -i nvme`
 # For example on our machine, the output of this is as follows:
 # `dc:00.0 Non-Volatile memory controller: Samsung Electronics Co Ltd NVMe SSD Controller 172Xa/172Xb (rev 01)`
-# Here the first column is showing the SSDs PCIe address. dc:00.0 => 0000:db:00.0 (you need to add the zeros in front)
+# Here the first column is showing the SSDs PCIe address. dc:00.0 => 0000:dc:00.0 (you need to add the zeros in front)
 #SSD_ADDR="none"
 SSD_ADDR="0000:dc:00.0"
