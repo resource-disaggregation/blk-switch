@@ -23,6 +23,8 @@ cleanup;
 
 spdk/build/bin/nvmf_tgt -m $core_bitmap &
 
+echo "Waiting for target to start";
+
 sleep 10; 
 
 # Null bdev

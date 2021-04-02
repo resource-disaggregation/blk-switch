@@ -21,7 +21,7 @@ num_use_cores="${10}"
 buffer_duration=10
 
 function cleanup() {
-    killall perf;
+    spdk/build/examples/perf;
     echo "Cleaned up";
 }
 
@@ -45,14 +45,14 @@ echo "Starting $outlabel";
 # Start apps
 # Thru-apps
 for ((i = 1 ; i <= $num_thru ; i++)); do
-    build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w randread -t 60 -L > results/$outlabel.thru$i.txt 2>&1 &
+    spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w randread -t 60 -L > results/$outlabel.thru$i.txt 2>&1 &
     pids+=($!);
     echo "Launched thru$i";
 done
 
 # Lat-apps
 for ((i = 1 ; i <= $num_lat ; i++)); do
-    build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+    spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
     pids+=($!);
     echo "Launched lat$i";
 done
