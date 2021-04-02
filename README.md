@@ -97,6 +97,9 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
    update-grub && reboot
    ```
 
+8. Do the same steps 1-7 for both Host and Target servers.
+
+
 ## 3. Setup Remote Storage Devices
 We assume that Target server has null-block devices (/dev/nullb0) and/or NVMe SSD (/dev/nvme0n1). We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tcp kernel module. Therefore,
 - Use nvme-tcp module to enable blk-switch + i10.
