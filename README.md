@@ -173,7 +173,7 @@ We now configure RAM null-blk device as a remote storage device at Target server
    ./target_null.sh
    ```
 
-   **NOTE: please edit "system_env.sh" to specify target IP address and number of cores before running "target_null.sh".**  
+   **NOTE: please edit "system_env.sh" to specify Target IP address, Network Interface name, and number of cores before running "target_null.sh".**  
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.  
 
 
