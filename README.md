@@ -148,6 +148,7 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
    ```
    cd ~
    cd blk-switch/scripts/
+   (see NOTE below)
    ./env_setup
    ./target_null.sh
    ```
@@ -185,6 +186,7 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
       ```
       cd ~
       cd blk-switch/scripts/
+      (see NOTE below)
       ./env_setup
       ./host_tcp_null.sh
       ```
@@ -212,6 +214,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ```
    cd ~
    cd blk-switch/scripts/
+   (see NOTE below)
    ./toy_example_blk-switch.sh
    ```
    NOTE: Edit "toy_example_blk-switch.sh" if your remote null-blk device created above for blk-switch is not "/dev/nvme0n1".
@@ -222,6 +225,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    cd ~
    cd blk-switch/scripts/
    ./host_i10_null.sh
+   (see NOTE below)
    ./toy_example_linux.sh
    ```
    NOTE: Check the remote storage device name newly added after executing "host_i10_null.sh". We assume it is "/dev/nvme1n1". Edit "toy_example_linux.sh" if not.
