@@ -1,6 +1,6 @@
 #!/bin/bash
 
-prefix=results/fig7;
+prefix=results/fig8;
 num_cores=6;
 
 # echo "lat-apps iops thru latavg lattail latiops"
