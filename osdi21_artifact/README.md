@@ -110,7 +110,7 @@ If this is your case, then you are safe to go. If this is not the case for your 
    ```
 
 ### blk-switch Performance Breakdown (Figure 13)
-To reproduce Figure 13 results, we will run four experiments named "Linux", "Linux+P", "Linux+P+RS", "Linux+P+RS+AS", and "(Extra)". The (Extra) is performed for kernel logs as our request-steering logs appear when the next experiment starts.
+To reproduce Figure 13 results, we will run four experiments named "Linux", "Linux+P", "Linux+P+RS", "Linux+P+RS+AS", and "(Extra)". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when the next experiment starts.
    ```
    ./blk-switch/blk-switch_fig13.pl
    ```
