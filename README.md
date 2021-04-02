@@ -254,7 +254,14 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
 4. Validate results (see output files on the same directory):
 
    If system has multiple cores per socket,
-      - L-app is isolated by blk-switch achieving lower latency than Linux.
-      - T-app uses more CPU resources by blk-switch achieving higher throughput than Linux.
+      - L-app is isolated by blk-switch achieving lower latency than Linux. **Check the unit (us or ns)**.
+      ```
+      grep 'clat (' output_linux_lapp output_blk-switch_lapp
+      grep '99.00th' output_linux_lapp output_blk-switch_lapp
+      ```
+      - T-app uses more CPU resources by blk-switch achieving comparable throughput to Linux.
+      ```
+      grep IOPS output_linux_tapp output_blk-switch_tapp
+      ```
 
 **To continue the artifact evaluation:** please go to "[osdi21_artifact/](https://github.com/resource-disaggregation/blk-switch/tree/master/osdi21_artifact)".
