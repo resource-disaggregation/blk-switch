@@ -9,38 +9,69 @@ Our hardware configurations used in the paper are:
 
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
+If you miss the [getting started instruction](https://github.com/resource-disaggregation/blk-switch#getting-started-guide), please complete "Building blk-swith Kernel" section first and come back.
 
 ### Run configuration scripts (with root)
-If you already ran these scripts before, skip this.
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you can skip those scripts.
 
 1. At Target:
+ Check if your system has NVMe SSD devices. Type "nvme list" and see if there is "/dev/nvme0n1" or more; they are NVMe SSDs.  
+ Please run "target_ssd.sh" below only when your system has "/dev/nvme0n1". Or we will use only RAM device.
+
    ```
    cd ~
    cd blk-switch
-   (Edit env_setup before using it)
-   ./scripts/env_setup
+   (Edit "system_env.sh" first)
    ./scripts/system_setup.sh
    ./scripts/target_null.sh
-   (Run below only when your system has an NVMe SSD - check with 'nvme list')
+   (Run below only when your system has NVMe SSD)
    ./scripts/target_ssd.sh
    ```
    
 2. At Host:
+ Check if your system has NVMe SSD devices. Type "nvme list" and see if there is "/dev/nvme0n1" or more; they are NVMe SSDs.  
+ After running the scripts below, you will see that 2-4 more remote storage devices are created via "nvme list".
    ```
    cd ~
    cd blk-switch
-   (Edit env_setup before using it)
-   ./scripts/env_setup
+   (Edit "system_env.sh" first)
    ./scripts/system_setup.sh
    ./scripts/host_tcp_null.sh
    ./scripts/host_i10_null.sh
-   (Run below only when your target has an NVMe SSD)
+   (Run below only when your target has NVMe SSD)
    ./scripts/host_tcp_ssd.sh
    ./scripts/host_i10_ssd.sh
    ```
 
 ### Linux and blk-switch Evaluation (with root)
-The default remote device names for blk-switch are "**/dev/nvme0n1**" for null-blk and "**/dev/nvme2n1**" for NVMe SSD. These can be configured with the "**$nvme_dev**" and "**$ssd_dev**" variables in each script.
+Now you will run evaluation scripts at Host server. We need to identify newly added remote devices to use the right one for each script.  
+
+If your Host server has no NVMe SSD, then your remote devices are:
+- **/dev/nvme0n1**: null-blk device for blk-switch
+- **/dev/nvme1n1**: null-blk device for Linux
+- **/dev/nvme2n1**: SSD device for blk-switch
+- **/dev/nvme3n1**: SSD device for Linux
+
+If your Host server has already one NVMe SSD (i.e., /dev/nvme0n1), then your remote devices are:
+- **/dev/nvme1n1**: null-blk device for blk-switch
+- **/dev/nvme2n1**: null-blk device for Linux
+- **/dev/nvme3n1**: SSD device for blk-switch
+- **/dev/nvme4n1**: SSD device for Linux
+
+In our scripts, we assume that there's no NVMe SSD at Host server. So the default configuration in our scripts is:
+For Figures 7, 8, 9, 11 (null-blk scenario):
+- blk-switch: "$nvme_dev = /dev/nvme0n1"
+- Linux: "$nvme_dev = /dev/nvme1n1"
+
+For Figure 10 (SSD scenario):
+- blk-switch:
+   - "$nvme_dev = /dev/nvme0n1"
+   - "$ssd_dev = /dev/nvme2n1"
+- Linux:
+   - "$nvme_dev = /dev/nvme1n1"
+   - "$ssd_dev = /dev/nvme3n1"
+
+If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please edit the scripts below with right device names before running them.
 
 1. Increasing L-app load (Figure 7):
 
