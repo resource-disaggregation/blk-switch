@@ -166,8 +166,8 @@ We now configure RAM null-blk device as a remote storage device at Target server
 4. Or, you can use our script for a quick setup (for RAM null-blk devices):
 
    ```
-   cd ~
-   cd blk-switch/scripts/
+   sudo -s
+   cd ~/blk-switch/scripts/
    (see NOTE below)
    ./target_null.sh
    ```
@@ -182,6 +182,7 @@ We now configure RAM null-blk device as a remote storage device at Target server
 1. Install NVMe utility (nvme-cli):
 
    ```
+   sudo -s
    cd ~
    git clone https://github.com/linux-nvme/nvme-cli.git
    cd nvme-cli
@@ -204,8 +205,7 @@ We now configure RAM null-blk device as a remote storage device at Target server
 4. Or, you can use our script for a quick setup:
 
       ```
-      cd ~
-      cd blk-switch/scripts/
+      cd ~/blk-switch/scripts/
       (see NOTE below)
       ./host_tcp_null.sh
       ```
@@ -226,15 +226,15 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
 1. Install FIO
 
    ```
-   sudo apt-get install fio
+   sudo -s
+   apt-get install fio
    ```
    Or refer to https://github.com/axboe/fio to install the latest version.
 
 2. Run one L-app and one T-app on a core:
 
    ```
-   cd ~
-   cd blk-switch/scripts/
+   cd ~/blk-switch/scripts/
    (see NOTE below)
    ./toy_example_blk-switch.sh
    ```
@@ -243,8 +243,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
 3. Compare with Linux (pure i10 without blk-switch):
 
    ```
-   cd ~
-   cd blk-switch/scripts/
+   cd ~/blk-switch/scripts/
    ./host_i10_null.sh
    (see NOTE below)
    ./toy_example_linux.sh
