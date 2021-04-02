@@ -10,6 +10,35 @@ Our hardware configurations used in the paper are:
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
 
+### Run configuration scripts
+If you already ran these scripts before, skip this.
+
+1. At Target:
+   ```
+   cd ~
+   cd blk-switch
+   (Edit env_setup before using it)
+   ./scripts/env_setup
+   ./scripts/system_setup.sh
+   ./scripts/target_null.sh
+   (Run below only when your system has an NVMe SSD - check with 'nvme list')
+   ./scripts/target_ssd.sh
+   ```
+   
+2. At Host:
+   ```
+   cd ~
+   cd blk-switch
+   (Edit env_setup before using it)
+   ./scripts/env_setup
+   ./scripts/system_setup.sh
+   ./scripts/host_tcp_null.sh
+   ./scripts/host_i10_null.sh
+   (Run below only when your target has an NVMe SSD)
+   ./scripts/host_tcp_ssd.sh
+   ./scripts/host_i10_ssd.sh
+   ```
+
 ### Linux and blk-switch Evaluation
 The default remote device names for blk-switch are "**/dev/nvme0n1**" for null-blk and "**/dev/nvme2n1**" for NVMe SSD. These can be configured with the "**$nvme_dev**" and "**$ssd_dev**" variables in each script.
 
