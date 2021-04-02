@@ -112,11 +112,11 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
 9. When systems are rebooted, check the kernel version: Type "uname -r". It should be "5.4.43-(your name)".
 
 ## 3. Setup Remote Storage Devices
-Later, we will compare "blk-switch" with "Linux". We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tcp kernel module. Therefore, we use
+We will compare two systems in the toy-experiment section, "blk-switch" and "Linux". We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tcp kernel module. Therefore, we use
 - nvme-tcp module for "blk-switch"
 - i10 module for "Linux"
 
-We now will configure two types of remote storage devices at Target server -- RAM null-blk device (/dev/nullb0) and/or NVMe SSD (/dev/nvme0n1). 
+We now configure RAM null-blk device (/dev/nullb0) as a remote storage device at Target server. 
 
 ### Target configuration
 (Go to step 4 if you want to skip steps 1--3)
