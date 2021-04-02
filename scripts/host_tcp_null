@@ -1,4 +1,0 @@
-modprobe nvme-tcp
-
-# Change target IP address
-nvme connect -t tcp -n nvme_null -a 192.168.10.115 -s 4425 -q nvme_null_host -W 24

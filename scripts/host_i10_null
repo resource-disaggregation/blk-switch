@@ -1,4 +1,0 @@
-modprobe i10-host
-
-# Change target IP address
-nvme connect -t i10 -n i10_null -a 192.168.10.115 -s 5620 -q i10_null_host
