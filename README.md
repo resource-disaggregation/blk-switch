@@ -101,11 +101,14 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
 
 
 ## 3. Setup Remote Storage Devices
-We assume that Target server has null-block devices (/dev/nullb0) and/or NVMe SSD (/dev/nvme0n1). We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tcp kernel module. Therefore,
-- Use nvme-tcp module to enable blk-switch + i10.
-- Use i10 module to enable (pure) i10 without blk-switch.
+We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tcp kernel module. Therefore, we use
+- nvme-tcp module for "blk-switch"
+- i10 module for "Linux"
+
+We now will configure two types of remote storage devices at Target server -- RAM null-block device (/dev/nullb0) and/or NVMe SSD (/dev/nvme0n1). 
 
 ### Target configuration
+(See step 4 if you want to skip steps 1--3)
 
 1. Create null-block devices (10GB):
 
@@ -146,21 +149,21 @@ We assume that Target server has null-block devices (/dev/nullb0) and/or NVMe SS
    - xxx.xxx.xxx.xxx: Target IP address
    - protocol name: "tcp", "i10", etc.
 
-Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-blk devices):
+4. Or, you can use our script for a quick setup (for RAM null-blk devices):
 
    ```
    cd ~
    cd blk-switch/scripts/
    (see NOTE below)
-   ./env_setup
    ./target_null.sh
    ```
 
-   **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
+   **NOTE: please edit "system_env.sh" to specify target IP address and number of cores before running "target_null.sh".**  
    You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
 
 
 ### Host configuration
+(See step 4 if you want to skip steps 2--3. You still need to run step 1.)
 
 1. Install NVMe utility (nvme-cli):
 
@@ -184,19 +187,18 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
    nvme connect -t (protocol name) -n (subsystem name) -a (target IP address) -s 4420 -q nvme_tcp_host -W (num of cores)
    ```
    
-   Or, you can use our script for a quick setup:
+4. Or, you can use our script for a quick setup:
 
       ```
       cd ~
       cd blk-switch/scripts/
       (see NOTE below)
-      ./env_setup
       ./host_tcp_null.sh
       ```
-      **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
+      **NOTE: please edit "system_env.sh" to specify target IP address and number of cores before using it.**  
       You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
 
-4. Check the remote storage device we create (e.g., /dev/nvme0n1):
+4. Check the remote storage device name you just created (e.g., /dev/nvme0n1):
 
    ```
    nvme list
@@ -233,7 +235,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ```
    NOTE: Check the remote storage device name newly added after executing "host_i10_null.sh". We assume it is "/dev/nvme1n1". Edit "toy_example_linux.sh" if not.
   
-4. Validate results (see output files):
+4. Validate results (see output files on the same directory):
 
    If system has multiple cores per socket,
       - L-app is isolated by blk-switch achieving lower latency than Linux.
