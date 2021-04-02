@@ -26,12 +26,14 @@ You should be root from now on. If you already ran some configuration scripts be
    ```
    sudo -s
    cd ~/blk-switch/scripts/
-   (Edit "system_env.sh" first if needed)
+   (See NOTE below first)
    ./system_setup.sh
    ./target_null.sh
    (Run below only when your system has NVMe SSD)
    ./target_ssd.sh
    ```
+   **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
+   You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
    
 2. At Host:  
  Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSD devices.
@@ -39,7 +41,7 @@ You should be root from now on. If you already ran some configuration scripts be
    ```
    sudo -s
    cd ~/blk-switch/scripts/
-   (Edit "system_env.sh" first if needed)
+   (See NOTE below first)
    ./system_setup.sh
    ./host_tcp_null.sh
    ./host_i10_null.sh
@@ -47,6 +49,8 @@ You should be root from now on. If you already ran some configuration scripts be
    ./host_tcp_ssd.sh
    ./host_i10_ssd.sh
    ```
+   **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
+   You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
 
 ### Linux and blk-switch Evaluation (with root)
 Now you will run evaluation scripts at Host server. We need to identify newly added remote devices to use the right one for each script.  
