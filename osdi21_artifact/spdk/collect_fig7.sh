@@ -20,5 +20,5 @@ echo "L-apps total-throughput throughput-per-core"
 for num_lat in 1 2 4 8; do
     tapp_xput=$(cat $prefix-lat$num_lat.thru*.txt | grep "Total        " | awk '{x += $3;} END {print x*128*1024*8/1e9;}');
     lapp_xput=$(cat $prefix-lat$num_lat.lat*.txt | grep "Total        " | awk '{x += $3;} END {print x*4*1024*8/1e9;}');
-    paste <(echo $num_lat) <(echo $(($tapp_xput+$lapp_xput))) <(awk -v txp=$tapp_xput -v lxp=$lapp_xput -v n=$num_cores 'BEGIN {print (txp+lxp)/n}');
+    paste <(echo $(($num_lat*6))) <(awk -v txp=$tapp_xput -v lxp=$lapp_xput -v n=$num_cores 'BEGIN {print (txp+lxp), (txp+lxp)/n}');
 done
