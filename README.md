@@ -153,7 +153,7 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
    ```
 
    **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
-   You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system:  
+   You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
 
 
 ### Host configuration
@@ -188,9 +188,10 @@ Or, you can use our script for a quick setup (both i10 and nvme-tcp with null-bl
       ./env_setup
       ./host_tcp_null.sh
       ```
-      **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**
+      **NOTE: please edit "env_setup" to specify target IP address and number of cores before using it.**  
+      You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
 
-4. Find the remote storage (e.g., /dev/nvme1n1):
+4. Check the remote storage device we create (e.g., /dev/nvme0n1):
 
    ```
    nvme list
@@ -206,22 +207,16 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ```
    Or refer to https://github.com/axboe/fio to install the latest version.
 
-2. Set CFS "target latency" parameter to 100μs to lower minimum timeslice:
-
-   ```
-   echo 100000000 > /proc/sys/kernel/sched_latency_ns
-   ```
-
-3. Run one L-app and one T-app on a core:
+2. Run one L-app and one T-app on a core:
 
    ```
    cd ~
    cd blk-switch/scripts/
    ./toy_example_blk-switch.sh
    ```
-   NOTE: Edit "toy_example_blk-switch.sh" if your remote null-blk device for blk-switch is not "/dev/nvme0n1".
+   NOTE: Edit "toy_example_blk-switch.sh" if your remote null-blk device created above for blk-switch is not "/dev/nvme0n1".
   
-4. Compare with Linux (pure i10 without blk-switch):
+3. Compare with Linux (pure i10 without blk-switch):
 
    ```
    cd ~
@@ -229,9 +224,9 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ./host_i10_null.sh
    ./toy_example_linux.sh
    ```
-   NOTE: Edit "toy_example_linux.sh" if your remote null-blk device for pure i10 is not "/dev/nvme1n1".
+   NOTE: Check the remote storage device name newly added after executing "host_i10_null.sh". We assume it is "/dev/nvme1n1". Edit "toy_example_linux.sh" if not.
   
-5. Validate results (see output files):
+4. Validate results (see output files):
 
    If system has multiple cores per socket,
       - L-app is isolated by blk-switch achieving lower latency than Linux.
