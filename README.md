@@ -107,7 +107,7 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
    update-grub && reboot
    ```
 
-8. Do the same steps 1-7 for both Host and Target servers.
+8. Do the same steps 1--7 for both Host and Target servers.
 
 9. When systems are rebooted, check the kernel version: Type "uname -r". It should be "5.4.43-(your name)".
 
@@ -170,7 +170,7 @@ We now will configure two types of remote storage devices at Target server -- RA
    ```
 
    **NOTE: please edit "system_env.sh" to specify target IP address and number of cores before running "target_null.sh".**  
-   You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
+   You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.  
 
 
 ### Host configuration
@@ -207,7 +207,7 @@ We now will configure two types of remote storage devices at Target server -- RA
       ./host_tcp_null.sh
       ```
       **NOTE: please edit "system_env.sh" to specify target IP address and number of cores before using it.**  
-      You can type "lscpu | grep ‘CPU(s)’" to get the number of cores of your system.  
+      You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.  
 
 4. Check the remote storage device name you just created (e.g., /dev/nvme0n1):
 
