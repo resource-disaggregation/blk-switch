@@ -19,7 +19,7 @@ You should be root from now on. If you already ran some configuration scripts be
 
 1. At Target:  
  Check if your Target has physical NVMe SSD devices. Type "nvme list" and see if there is "**/dev/nvme0n1**".  
- If your Target does not have "**/dev/nvme0n1**", we will skip "**target_ssd.sh**" and will use only RAM device (null-blk) below.
+ If your Target does not have "**/dev/nvme0n1**", we will skip "**target_ssd.sh**" and will configure only RAM device (null-blk) below.
 
    ```
    cd ~
@@ -32,7 +32,7 @@ You should be root from now on. If you already ran some configuration scripts be
    ```
    
 2. At Host:  
- Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSDs.
+ Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSD devices.
  After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
    ```
    cd ~
@@ -55,7 +55,7 @@ If your Host server has no NVMe SSD, then your remote devices are:
 - **/dev/nvme2n1**: SSD device for blk-switch
 - **/dev/nvme3n1**: SSD device for Linux
 
-If your Host server has already one NVMe SSD (i.e., /dev/nvme0n1), then your remote devices are:
+If your Host server has already one NVMe SSD (i.e., **/dev/nvme0n1**), then your remote devices are:
 - **/dev/nvme1n1**: null-blk device for blk-switch
 - **/dev/nvme2n1**: null-blk device for Linux
 - **/dev/nvme3n1**: SSD device for blk-switch
@@ -64,18 +64,18 @@ If your Host server has already one NVMe SSD (i.e., /dev/nvme0n1), then your rem
 In our scripts, we assume that there's no NVMe SSD at Host server. So the default configuration in our scripts is:  
 
 For Figures 7, 8, 9, 11 (null-blk scenario):
-- blk-switch: "$nvme_dev = /dev/nvme0n1"
-- Linux: "$nvme_dev = /dev/nvme1n1"
+- blk-switch: "**$nvme_dev = /dev/nvme0n1**"
+- Linux: "**$nvme_dev = /dev/nvme1n1**"
 
 For Figure 10 (SSD scenario):
 - blk-switch:
-   - "$nvme_dev = /dev/nvme0n1"
-   - "$ssd_dev = /dev/nvme2n1"
+   - "**$nvme_dev = /dev/nvme0n1**"
+   - "**$ssd_dev = /dev/nvme2n1**"
 - Linux:
-   - "$nvme_dev = /dev/nvme1n1"
-   - "$ssd_dev = /dev/nvme3n1"
+   - "**$nvme_dev = /dev/nvme1n1**"
+   - "**$ssd_dev = /dev/nvme3n1**"
 
-If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please edit the scripts below with right device names before running them.
+If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please EDIT the scripts below with right device names before running them.
 
 1. Increasing L-app load (Figure 7):
 
@@ -113,12 +113,12 @@ If this is your case, then you are safe to go. If this is not the case for your 
    ```
 
 ### blk-switch Performance Breakdown (Figure 13)
-To reproduce Figure 13 results, we will run four experiments named "Linux", "Linux+P", "Linux+P+RS", "Linux+P+RS+AS", and "(Extra)". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when the next experiment starts.
+To reproduce Figure 13 results, we will run four experiments named "**Linux**", "**Linux+P**", "**Linux+P+RS**", "**Linux+P+RS+AS**", and "**(Extra)**". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when a new experiment starts.
    ```
    ./blk-switch/blk-switch_fig13.pl
    ```
 
-After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for "Linux+P+RS+AS" (Figure 13f) and the 7th line shows how L-app moves. The next last 6 lines are for "Linux+P+RS" (Figure 13e). For each core, the kernel logs mean:
+After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for "**Linux+P+RS+AS**" (Figure 13f) and the 7th line shows how L-app moves. The next last 6 lines are for "**Linux+P+RS**" (Figure 13e). For each core, the kernel logs mean:
 - gen: how many T-app requests are generated on that core.
 - str: how many T-app requests are steered to other cores on that core.
 - prc: how many T-app requests came from other cores are processed on that core.
