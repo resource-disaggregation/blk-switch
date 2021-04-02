@@ -13,10 +13,13 @@ cd ..
 ### Sytems configuration
 Network stack configuration
 Enable TSO/GRO, Jumbo frames, aRFS
+(set iface to the interface name of the NIC to be used)
+[TODO: enable arfs script is specific to Mellanox NIC. Need to check for other NICs]
 ```
-sudo ethtool -K <interface> tso on gso on gro on
-sudo ifconfig <interface> mtu 9000
-sudo ./enable_arfs.sh <interface>
+export iface=ens2f0
+sudo ethtool -K $iface tso on gso on gro on
+sudo ifconfig $iface mtu 9000
+sudo ./enable_arfs.sh $iface
 ```
 
 Disable hyperthreading (if on)
