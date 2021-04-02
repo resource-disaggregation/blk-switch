@@ -12,7 +12,8 @@ lat_sz=$((4*1024))
 lat_qd=1
 
 
-for num_cores in 1 2 3 4 5 6; do
+# TODO: deal with the cases when 10 cores are not available
+for num_cores in 1 2 3 4 5 6 7 8 9 10; do
 
     echo "Starting $config-cores$num_cores";
     ./run_apps.sh $config-cores$num_cores "$thru_target" "$lat_target" $duration $thru_sz $thru_qd $num_cores $num_cores 0 $num_cores;
