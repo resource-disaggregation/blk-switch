@@ -116,7 +116,7 @@ We will compare two systems in the toy-experiment section, "blk-switch" and "Lin
 - nvme-tcp module for "blk-switch"
 - i10 module for "Linux"
 
-We now configure RAM null-blk device (/dev/nullb0) as a remote storage device at Target server. 
+We now configure RAM null-blk device as a remote storage device at Target server. 
 
 ### Target configuration
 (Go to step 4 if you want to skip steps 1--3)
