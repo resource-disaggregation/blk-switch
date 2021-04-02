@@ -12,8 +12,14 @@ cd ..
 
 ### Sytems configuration
 Network stack configuration
-[TODO: Enable TSO/GRO, Jumbo frames, aRFS]
-Disable hyperthreading
+Enable TSO/GRO, Jumbo frames, aRFS
+```
+sudo ethtool -K <interface> tso on gso on gro on
+sudo ifconfig <interface> mtu 9000
+sudo ./enable_arfs.sh <interface>
+```
+
+Disable hyperthreading (if on)
 ```
 echo off | sudo tee /sys/devices/system/cpu/smt/control
 ```

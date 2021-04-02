@@ -12,7 +12,7 @@ lat_sz=$((4*1024))
 lat_qd=1
 
 
-for num_lat in 1 2 4 8; do
+for num_lat in 1 2 4; do
 
     echo "Starting $config-lat$num_lat";
     ./run_apps.sh $config-lat$num_lat "$thru_target" "$lat_target" $duration $thru_sz $thru_qd 6 $((6*$num_lat)) 0 6;
