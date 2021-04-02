@@ -81,12 +81,13 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
 5. Compile and install:
 
    ```
+   (See NOTE below for '-j24')
    make -j24 bzImage
    make -j24 modules
    make modules_install
    make install
    ```
-   The number 24 means the number of threads created for compilation. Set it to be the total number of cores of your system to reduce the compilation time. Type "lscpu | grep 'CPU(s)'" to see the total number of cores:
+   NOTE: The number 24 means the number of threads created for compilation. Set it to be the total number of cores of your system to reduce the compilation time. Type "lscpu | grep 'CPU(s)'" to see the total number of cores:
    
    ```
    CPU(s):                24
