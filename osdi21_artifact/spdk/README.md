@@ -1,5 +1,7 @@
 # SPDK Evaluation
 
+**Note:** This README is self-contained. It contains instructions to setup and evaluate against SPDK (one of the baselines used in the paper). You do not need to build/setup blk-switch for this. Just the instructions here are sufficient.
+
 The below commands to setup, build, configure, and prepare SPDK need to be run on both machines (Host & Target).
 ### Fetch and build SPDK
 ```
