@@ -18,6 +18,7 @@ $n_input = @tapp_qd;
 $repeat = 1;
 
 # Run
+system("echo 0 > /sys/module/blk_mq/parameters/blk_switch_on");
 print("## Figure 8. Linux ##\n\n");
 
 for($i=0; $i<$n_input; $i++)
