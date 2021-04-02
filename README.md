@@ -260,7 +260,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
          grep 'clat (' output_linux_lapp output_blk-switch_lapp
          grep '99.00th' output_linux_lapp output_blk-switch_lapp
          ```
-      - T-app uses more CPU resources by blk-switch achieving comparable throughput to Linux.
+      - While achieving low latency, blk-switch also achieves comparable throughput to Linux.
          ```
          cd ~/blk-switch/scripts/
          grep IOPS output_linux_tapp output_blk-switch_tapp
