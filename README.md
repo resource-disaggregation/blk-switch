@@ -119,7 +119,7 @@ We will compare two systems in the toy-experiment section, "blk-switch" and "Lin
 We now configure RAM null-blk device as a remote storage device at Target server. 
 
 ### Target configuration
-(Go to step 4 if you want to skip steps 1--3)
+(In step 4, we provide a script that covers steps 1--3, so please go to step 4 if you want to skip steps 1--3)
 
 1. Create null-block devices (10GB):
 
