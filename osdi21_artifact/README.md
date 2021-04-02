@@ -9,6 +9,7 @@ Our hardware configurations used in the paper are:
 
 [**Caveats of our work**]
 - Our work has been evaluated with 100Gbps NICs and 4-socket multi-core CPUs. Performance degradation is expected if the above hardware configuration is not available.
+- **system_setup.sh** includes Mellanox NIC-specific configuration (e.g., enabling aRFS).
 - As described in the paper, we mainly use 6 cores in NUMA0 and their core numbers, 0, 4, 8, 12, 16, 20, are used through the evaluation scripts. These numbers should be changed if the systems have different number of NUMA nodes:
    ```
    lscpu | grep 'CPU(s)'
