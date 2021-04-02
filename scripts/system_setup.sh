@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/bin/bash
+
+source system_env.sh
 
 intf=$TARGET_INF
 
