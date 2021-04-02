@@ -10,7 +10,7 @@ Our hardware configurations used in the paper are:
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
 
-### Run configuration scripts
+### Run configuration scripts (with root)
 If you already ran these scripts before, skip this.
 
 1. At Target:
@@ -39,7 +39,7 @@ If you already ran these scripts before, skip this.
    ./scripts/host_i10_ssd.sh
    ```
 
-### Linux and blk-switch Evaluation
+### Linux and blk-switch Evaluation (with root)
 The default remote device names for blk-switch are "**/dev/nvme0n1**" for null-blk and "**/dev/nvme2n1**" for NVMe SSD. These can be configured with the "**$nvme_dev**" and "**$ssd_dev**" variables in each script.
 
 1. Increasing L-app load (Figure 7):
