@@ -33,6 +33,7 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
 **(Don't forget to be root)**
 1. Download Linux kernel source tree:
    ```
+   sudo -s
    cd ~
    wget https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.43.tar.gz
    tar xzvf linux-5.4.43.tar.gz
