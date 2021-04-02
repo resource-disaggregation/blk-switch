@@ -9,7 +9,10 @@ Our hardware configurations used in the paper are:
 
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
-If you miss the [getting started instruction](https://github.com/resource-disaggregation/blk-switch#getting-started-guide), please complete "Building blk-swith Kernel" section first and come back.
+
+**[NOTE]:**
+- If you miss the [getting started instruction](https://github.com/resource-disaggregation/blk-switch#getting-started-guide), please complete "Building blk-swith Kernel" section first and come back.
+- If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
 You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you can skip those scripts.
