@@ -8,7 +8,7 @@ ssd_addr=${3-none}
 echo "SSD: $ssd_addr";
 
 function cleanup() {
-    killall nvmf_tgt;
+    killall spdk/build/bin/nvmf_tgt;
     echo "Cleaned up";
 }
 
