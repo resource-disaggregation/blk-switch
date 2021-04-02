@@ -30,9 +30,10 @@ The detailed instructions to reproduce all individual results presented in our O
 ## 2. Build blk-switch Kernel (with root)
 blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. Building the blk-switch kernel should be done on both Host and Target servers.
 
+**(Don't forget to be root)**
 1. Download Linux kernel source tree:
    ```
-   cd /usr/src/
+   cd ~
    wget https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.43.tar.gz
    tar xzvf linux-5.4.43.tar.gz
    ```
@@ -40,11 +41,10 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
 2. Download blk-switch source code and copy to the kernel source tree:
 
    ```
-   cd ~
    git clone https://github.com/resource-disaggregation/blk-switch.git
    cd blk-switch
-   cp -rf block drivers include /usr/src/linux-5.4.43/
-   cd /usr/src/linux-5.4.43/
+   cp -rf block drivers include ~/linux-5.4.43/
+   cd ~/linux-5.4.43/
    ```
 
 3. Update kernel configuration:
@@ -53,7 +53,17 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
    cp /boot/config-x.x.x .config
    make olddefconfig
    ```
-   "x.x.x" is a kernel version. It can be your current kernel version or latest version your system has. Type "uname -r" to see your current kernel version.
+   "x.x.x" is a kernel version. It can be your current kernel version or latest version your system has. Type "uname -r" to see your current kernel version.  
+ 
+   Add your name in the kernel version.
+   ```
+   vi .config
+   (in the file)
+   ...
+   CONFIG_LOCALVERSION="-jaehyun"
+   ...
+   ```
+   Save the .config file and exit.   
 
 4. Make sure i10 and nvme-tcp modules are included in the kernel configuration:
 
@@ -87,7 +97,7 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
    ```
    ...
    #GRUB_DEFAULT=0 
-   GRUB_DEFAULT="1>Ubuntu, with Linux 5.4.43"
+   GRUB_DEFAULT="1>Ubuntu, with Linux 5.4.43-jaehyun"
    ...
    ```
 
@@ -99,6 +109,7 @@ blk-switch has been successfully tested on Ubuntu 16.04 LTS with kernel 5.4.43. 
 
 8. Do the same steps 1-7 for both Host and Target servers.
 
+9. When systems are rebooted, check the kernel version: Type "uname -r". It should be "5.4.43-(your name)".
 
 ## 3. Setup Remote Storage Devices
 We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tcp kernel module. Therefore, we use
@@ -108,7 +119,7 @@ We implemented a part of blk-switch (multi-egress support of i10) in the nvme-tc
 We now will configure two types of remote storage devices at Target server -- RAM null-block device (/dev/nullb0) and/or NVMe SSD (/dev/nvme0n1). 
 
 ### Target configuration
-(See step 4 if you want to skip steps 1--3)
+(Go to step 4 if you want to skip steps 1--3)
 
 1. Create null-block devices (10GB):
 
@@ -163,7 +174,7 @@ We now will configure two types of remote storage devices at Target server -- RA
 
 
 ### Host configuration
-(See step 4 if you want to skip steps 2--3. You still need to run step 1.)
+(Go to step 4 if you want to skip steps 2--3. You still need to run step 1.)
 
 1. Install NVMe utility (nvme-cli):
 
