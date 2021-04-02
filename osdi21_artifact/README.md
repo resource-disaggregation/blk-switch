@@ -77,42 +77,42 @@ For Figure 10 (SSD scenario):
 
 If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please EDIT the scripts below with right device names before running them.
 
-1. Increasing L-app load (Figure 7):
+1. Figure 7: Increasing L-app load (6 mins):
 
    ```
    ./blk-switch/linux_fig7.pl
    ./blk-switch/blk-switch_fig7.pl
    ```
 
-2. Increasing T-app load (Figure 8):
+2. Figure 8: Increasing T-app load (12 mins):
 
    ```
    ./blk-switch/linux_fig8.pl
    ./blk-switch/blk-switch_fig8.pl
    ```
 
-3. Varying number of cores (Figure 9)
+3. Figure 9: Varying number of cores (20 mins):
 
    ```
    ./blk-switch/linux_fig9.pl
    ./blk-switch/blk-switch_fig9.pl
    ```
 
-4. SSD results corresponding to Figure 7 (Figure 10)
+4. Figure 10: SSD results corresponding to Figure 7 (6 mins):
 
    ```
    ./blk-switch/linux_fig10.pl
    ./blk-switch/blk-switch_fig10.pl
    ```
 
-5. Increasing read ratio (Figure 11)
+5. Figure 11: Increasing read ratio (10 mins):
   
    ```
    ./blk-switch/linux_fig11.pl
    ./blk-switch/blk-switch_fig11.pl
    ```
 
-### blk-switch Performance Breakdown (Figure 13)
+### Figure 13: blk-switch Performance Breakdown (~1 min)
 To reproduce Figure 13 results, we will run four experiments named "**Linux**", "**Linux+P**", "**Linux+P+RS**", "**Linux+P+RS+AS**", and "**(Extra)**". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when a new experiment starts.
    ```
    ./blk-switch/blk-switch_fig13.pl
