@@ -23,12 +23,12 @@ You should be root from now on. If you already ran some configuration scripts be
 
    ```
    cd ~
-   cd blk-switch
+   cd blk-switch/scripts/
    (Edit "system_env.sh" first if needed)
-   ./scripts/system_setup.sh
-   ./scripts/target_null.sh
+   ./system_setup.sh
+   ./target_null.sh
    (Run below only when your system has NVMe SSD)
-   ./scripts/target_ssd.sh
+   ./target_ssd.sh
    ```
    
 2. At Host:  
@@ -36,14 +36,14 @@ You should be root from now on. If you already ran some configuration scripts be
  After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
    ```
    cd ~
-   cd blk-switch
+   cd blk-switch/scripts/
    (Edit "system_env.sh" first if needed)
-   ./scripts/system_setup.sh
-   ./scripts/host_tcp_null.sh
-   ./scripts/host_i10_null.sh
+   ./system_setup.sh
+   ./host_tcp_null.sh
+   ./host_i10_null.sh
    (Run below only when your target has NVMe SSD)
-   ./scripts/host_tcp_ssd.sh
-   ./scripts/host_i10_ssd.sh
+   ./host_tcp_ssd.sh
+   ./host_i10_ssd.sh
    ```
 
 ### Linux and blk-switch Evaluation (with root)
