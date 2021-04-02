@@ -2,7 +2,7 @@
 
 # Example usage: ./run_varylatapps.sh singlecore-remoteram 'trtype:TCP traddr:192.168.10.115 adrfam:IPv4 trsvcid:4420 subnqn:nqn.2020-07.com.midhul:null0' 'trtype:TCP traddr:192.168.10.115 adrfam:IPv4 trsvcid:4420 subnqn:nqn.2020-07.com.midhul:null0' 60 $((128*1024)) 8
 
-config=$1
+config="fig7"
 thru_target="$(cat config/ram_disk_addr.txt)"
 lat_target="$(cat config/ram_disk_addr.txt)"
 duration="$(cat config/duration.txt)"
