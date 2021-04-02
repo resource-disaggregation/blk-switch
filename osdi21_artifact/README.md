@@ -58,7 +58,8 @@ If your Host server has already one NVMe SSD (i.e., /dev/nvme0n1), then your rem
 - **/dev/nvme3n1**: SSD device for blk-switch
 - **/dev/nvme4n1**: SSD device for Linux
 
-In our scripts, we assume that there's no NVMe SSD at Host server. So the default configuration in our scripts is:
+In our scripts, we assume that there's no NVMe SSD at Host server. So the default configuration in our scripts is:  
+
 For Figures 7, 8, 9, 11 (null-blk scenario):
 - blk-switch: "$nvme_dev = /dev/nvme0n1"
 - Linux: "$nvme_dev = /dev/nvme1n1"
