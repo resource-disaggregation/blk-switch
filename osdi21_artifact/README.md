@@ -27,7 +27,7 @@ Now we provide how to use our scripts to reproduce the results in the paper.
 - If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
-You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts (**target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**).
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts **target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**.
 
 **(Don't forget to be root)**
 
