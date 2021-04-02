@@ -22,7 +22,7 @@ read_p="${11}"
 buffer_duration=10
 
 function cleanup() {
-    killall spdk/build/examples/perf;
+    killall spdk/build/examples/perf > /dev/null 2>&1;
     echo "Cleaned up";
 }
 

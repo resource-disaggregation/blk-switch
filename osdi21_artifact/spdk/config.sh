@@ -7,6 +7,10 @@ IFACE="enp37s0f1"
 # This can be obtained via `ifconfig`
 IP_ADDR="192.168.10.115"
 
+# This is the IP address of the other machine 
+# i.e. this is the value that you would enter in the IP_ADDR field in the config.sh file on the other machine
+PEER_IP_ADDR="192.168.10.116"
+
 # If you have an NVMe SSD attached to the machine, specify it's PCIe bus address here
 # If there is not SSD, just set it to "none"
 # One way to look for SSDs is to run `lspci | grep -i nvme`
