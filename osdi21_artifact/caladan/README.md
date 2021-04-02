@@ -7,3 +7,9 @@
 ### Build and setup Caladan
 Refer to the README file in `caladan-code` for detailed instuctions on how to build and setup Caladan. These need to be run on both Host and Target machines
 
+### Run experiments
+Scripts to run the experiments in our evaluation sectino are liste below
+
+- Vary L-app load (Figure 7): caladan_fig7.sh
+- Vary T-app load (Figure 8): caladan_fig8.sh
+- Varying number of cores (Figure 9): caladan_fig9.sh
