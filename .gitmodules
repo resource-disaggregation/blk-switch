@@ -1,0 +1,3 @@
+[submodule "osdi21_artifact/spdk/spdk"]
+	path = osdi21_artifact/spdk/spdk
+	url = https://github.com/spdk/spdk
