@@ -10,6 +10,7 @@ blk-switch is a redesign of the Linux kernel storage stack that achieves μs-sca
 - *drivers/nvme/* includes remote storage stack kernel modules such as i10 and NVMe-over-TCP (nvme-tcp).
 - *include/linux* includes small changes in some headers for blk-switch and i10.
 - *osdi21_artifact/* includes scripts for OSDI21 artifact evaluation.
+- *scripts/* includes scripts for getting started instructions.
 
 ### System overview
 For simplicity, we assume that users have two physical servers (Host and Target) connected with each other over networks. Target server has actual storage devices (e.g., RAM block device, NVMe SSD, etc.), and Host server accesses the Target-side storage devices via the remote storage stack (e.g., i10, nvme-tcp) over the networks. Then Host server runs latency-sensitive applications (L-apps) and throughput-bound applications (T-apps) using standard I/O APIs (e.g., Linux AIO). Meanwhile, blk-switch plays a role for providing μs-latency and high throughput at the kernel block device layer.
