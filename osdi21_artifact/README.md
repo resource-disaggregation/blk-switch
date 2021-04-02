@@ -109,5 +109,16 @@ If this is your case, then you are safe to go. If this is not the case for your 
    ./blk-switch/blk-switch_fig11.pl
    ```
 
+### blk-switch Performance Breakdown (Figure 13)
+To reproduce Figure 13 results, we will run four experiments named "Linux", "Linux+P", "Linux+P+RS", "Linux+P+RS+AS", and "(Extra)". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when the next experiment starts.
+   ```
+   ./blk-switch/blk-switch_fig13.pl
+   ```
+
+After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for "Linux+P+RS+AS" (Figure 13e) and the 7th line shows how L-app moves. The next last 6 lines are for "Linux+P+RS" (Figure 13f). For each core, the kernel logs mean:
+- gen: how many T-app requests are generated on that core.
+- str: how many T-app requests are steered to other cores on that core.
+- prc: how many T-app requests came from other cores are processed on that core.
+
 ### SPDK Evaluation
 Please refer to README in spdk/ folder
