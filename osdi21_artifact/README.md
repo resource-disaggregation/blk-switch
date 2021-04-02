@@ -27,7 +27,7 @@ Now we provide how to use our scripts to reproduce the results in the paper.
 - If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
-You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts **target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**.
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts -- **target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**.
 
 **(Don't forget to be root)**
 
@@ -44,10 +44,10 @@ You should be root from now on. If you already ran some configuration scripts be
    (Run below only when your system has NVMe SSD)
    ./target_ssd.sh
    ```
-   **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
+   **NOTE: please edit "system_env.sh" to specify Target IP address, interface name, and number of cores before running the following scripts.**
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
    
-   The below error messages from system_setup.sh is normal. Please ignore them.
+   The below error messages from **system_setup.sh** is normal. Please ignore them.
    ```
    Cannot get device udp-fragmentation-offload settings: Operation not supported
    Cannot get device udp-fragmentation-offload settings: Operation not supported
@@ -70,7 +70,7 @@ You should be root from now on. If you already ran some configuration scripts be
    ./host_tcp_ssd.sh
    ./host_i10_ssd.sh
    ```
-   **NOTE: please edit "system_env.sh" to specify Target IP address and number of cores before running the following scripts.**
+   **NOTE: please edit "system_env.sh" to specify Target IP address, interface name, and number of cores before running the following scripts.**
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
 
 ### Linux and blk-switch Evaluation (with root)
