@@ -119,7 +119,7 @@ We will compare two systems in the toy-experiment section, "blk-switch" and "Lin
 We now configure RAM null-blk device as a remote storage device at Target server. 
 
 ### Target configuration
-(Go to step 4 if you want to skip steps 1--3)
+(In step 4, we provide a script that covers steps 1--3, so please go to step 4 if you want to skip steps 1--3)
 
 1. Create null-block devices (10GB):
 
@@ -233,7 +233,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    (see NOTE below)
    ./toy_example_blk-switch.sh
    ```
-   NOTE: Edit "toy_example_blk-switch.sh" if your remote null-blk device created above for blk-switch is not "/dev/nvme0n1".
+   NOTE: Edit "**toy_example_blk-switch.sh**" if your remote null-blk device created above for blk-switch is not "**/dev/nvme0n1**".
   
 3. Compare with Linux (pure i10 without blk-switch):
 
@@ -244,7 +244,7 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    (see NOTE below)
    ./toy_example_linux.sh
    ```
-   NOTE: Check the remote storage device name newly added after executing "host_i10_null.sh". We assume it is "/dev/nvme1n1". Edit "toy_example_linux.sh" if not.
+   NOTE: Check the remote storage device name newly added after executing "**host_i10_null.sh**". We assume it is "**/dev/nvme1n1**". Edit "**toy_example_linux.sh**" if not.
   
 4. Validate results (see output files on the same directory):
 

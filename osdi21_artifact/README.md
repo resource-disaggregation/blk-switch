@@ -9,38 +9,41 @@ Our hardware configurations used in the paper are:
 
 ## 2. Detailed Instructions
 Now we provide how to use our scripts to reproduce the results in the paper. 
-If you miss the [getting started instruction](https://github.com/resource-disaggregation/blk-switch#getting-started-guide), please complete "Building blk-swith Kernel" section first and come back.
+
+**[NOTE]:**
+- If you miss the [getting started instruction](https://github.com/resource-disaggregation/blk-switch#getting-started-guide), please complete "Building blk-swith Kernel" section first and come back.
+- If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
-You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you can skip those scripts.
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you should skip those scripts (**target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**).
 
 1. At Target:  
- Check if your system has NVMe SSD devices. Type "nvme list" and see if there is "/dev/nvme0n1".  
- If your system does not have "/dev/nvme0n1", we will skip "target_ssd.sh" and use only RAM device (null-blk) below.
+ Check if your Target has physical NVMe SSD devices. Type "nvme list" and see if there is "**/dev/nvme0n1**".  
+ If your Target does not have "**/dev/nvme0n1**", we will skip "**target_ssd.sh**" and will configure only RAM device (null-blk) below.
 
    ```
    cd ~
-   cd blk-switch
+   cd blk-switch/scripts/
    (Edit "system_env.sh" first if needed)
-   ./scripts/system_setup.sh
-   ./scripts/target_null.sh
+   ./system_setup.sh
+   ./target_null.sh
    (Run below only when your system has NVMe SSD)
-   ./scripts/target_ssd.sh
+   ./target_ssd.sh
    ```
    
 2. At Host:  
- Also we will skip "host_tcp_ssd.sh" and "host_i10_ssd.sh" if your TARGET server does not have NVMe SSD.
+ Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSD devices.
  After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
    ```
    cd ~
-   cd blk-switch
+   cd blk-switch/scripts/
    (Edit "system_env.sh" first if needed)
-   ./scripts/system_setup.sh
-   ./scripts/host_tcp_null.sh
-   ./scripts/host_i10_null.sh
+   ./system_setup.sh
+   ./host_tcp_null.sh
+   ./host_i10_null.sh
    (Run below only when your target has NVMe SSD)
-   ./scripts/host_tcp_ssd.sh
-   ./scripts/host_i10_ssd.sh
+   ./host_tcp_ssd.sh
+   ./host_i10_ssd.sh
    ```
 
 ### Linux and blk-switch Evaluation (with root)
@@ -52,7 +55,7 @@ If your Host server has no NVMe SSD, then your remote devices are:
 - **/dev/nvme2n1**: SSD device for blk-switch
 - **/dev/nvme3n1**: SSD device for Linux
 
-If your Host server has already one NVMe SSD (i.e., /dev/nvme0n1), then your remote devices are:
+If your Host server has already one NVMe SSD (i.e., **/dev/nvme0n1**), then your remote devices are:
 - **/dev/nvme1n1**: null-blk device for blk-switch
 - **/dev/nvme2n1**: null-blk device for Linux
 - **/dev/nvme3n1**: SSD device for blk-switch
@@ -61,61 +64,61 @@ If your Host server has already one NVMe SSD (i.e., /dev/nvme0n1), then your rem
 In our scripts, we assume that there's no NVMe SSD at Host server. So the default configuration in our scripts is:  
 
 For Figures 7, 8, 9, 11 (null-blk scenario):
-- blk-switch: "$nvme_dev = /dev/nvme0n1"
-- Linux: "$nvme_dev = /dev/nvme1n1"
+- blk-switch: "**$nvme_dev = /dev/nvme0n1**"
+- Linux: "**$nvme_dev = /dev/nvme1n1**"
 
 For Figure 10 (SSD scenario):
 - blk-switch:
-   - "$nvme_dev = /dev/nvme0n1"
-   - "$ssd_dev = /dev/nvme2n1"
+   - "**$nvme_dev = /dev/nvme0n1**"
+   - "**$ssd_dev = /dev/nvme2n1**"
 - Linux:
-   - "$nvme_dev = /dev/nvme1n1"
-   - "$ssd_dev = /dev/nvme3n1"
+   - "**$nvme_dev = /dev/nvme1n1**"
+   - "**$ssd_dev = /dev/nvme3n1**"
 
-If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please edit the scripts below with right device names before running them.
+If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please EDIT the scripts below with right device names before running them.
 
-1. Increasing L-app load (Figure 7):
+1. Figure 7: Increasing L-app load (6 mins):
 
    ```
    ./blk-switch/linux_fig7.pl
    ./blk-switch/blk-switch_fig7.pl
    ```
 
-2. Increasing T-app load (Figure 8):
+2. Figure 8: Increasing T-app load (12 mins):
 
    ```
    ./blk-switch/linux_fig8.pl
    ./blk-switch/blk-switch_fig8.pl
    ```
 
-3. Varying number of cores (Figure 9)
+3. Figure 9: Varying number of cores (20 mins):
 
    ```
    ./blk-switch/linux_fig9.pl
    ./blk-switch/blk-switch_fig9.pl
    ```
 
-4. SSD results corresponding to Figure 7 (Figure 10)
+4. Figure 10: SSD results corresponding to Figure 7 (6 mins):
 
    ```
    ./blk-switch/linux_fig10.pl
    ./blk-switch/blk-switch_fig10.pl
    ```
 
-5. Increasing read ratio (Figure 11)
+5. Figure 11: Increasing read ratio (10 mins):
   
    ```
    ./blk-switch/linux_fig11.pl
    ./blk-switch/blk-switch_fig11.pl
    ```
 
-### blk-switch Performance Breakdown (Figure 13)
-To reproduce Figure 13 results, we will run four experiments named "Linux", "Linux+P", "Linux+P+RS", "Linux+P+RS+AS", and "(Extra)". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when the next experiment starts.
+### Figure 13: blk-switch Performance Breakdown (~1 min)
+To reproduce Figure 13 results, we will run four experiments named "**Linux**", "**Linux+P**", "**Linux+P+RS**", "**Linux+P+RS+AS**", and "**(Extra)**". The (Extra) is nothing but performed to print out kernel logs as the request-steering logs appear when a new experiment starts.
    ```
    ./blk-switch/blk-switch_fig13.pl
    ```
 
-After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for "Linux+P+RS+AS" (Figure 13f) and the 7th line shows how L-app moves. The next last 6 lines are for "Linux+P+RS" (Figure 13e). For each core, the kernel logs mean:
+After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for "**Linux+P+RS+AS**" (Figure 13f) and the 7th line shows how L-app moves. The next last 6 lines are for "**Linux+P+RS**" (Figure 13e). For each core, the kernel logs mean:
 - gen: how many T-app requests are generated on that core.
 - str: how many T-app requests are steered to other cores on that core.
 - prc: how many T-app requests came from other cores are processed on that core.
