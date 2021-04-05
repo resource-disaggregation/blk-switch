@@ -1,3 +1,12 @@
 [submodule "osdi21_artifact/spdk/spdk"]
 	path = osdi21_artifact/spdk/spdk
 	url = https://github.com/spdk/spdk
+[submodule "osdi21_artifact/caladan/caladan-code/dpdk"]
+	path = osdi21_artifact/caladan/caladan-code/dpdk
+	url = https://github.com/DPDK/dpdk/
+[submodule "osdi21_artifact/caladan/caladan-code/rdma-core"]
+	path = osdi21_artifact/caladan/caladan-code/rdma-core
+	url = https://github.com/linux-rdma/rdma-core/
+[submodule "osdi21_artifact/caladan/caladan-code/spdk"]
+	path = osdi21_artifact/caladan/caladan-code/spdk
+	url = https://github.com/spdk/spdk/

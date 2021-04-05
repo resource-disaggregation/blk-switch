@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/syscall.h>
 
 #include <base/stddef.h>
@@ -43,7 +44,14 @@ static int cpu_scan_topology(void)
 		}
 	}
 
-	numa_count = 1;
+	const char *env_numa_count = getenv("NUMA_LIMIT");
+	int numa_count_env;
+	if(env_numa_count != NULL) {
+		numa_count_env = atoi(env_numa_count);
+		if(numa_count_env < numa_count) {
+			numa_count = numa_count_env;
+		}
+	}
 
 	if (numa_count <= 0 || numa_count > NNUMA) {
 		log_err("cpu: detected %d NUMA nodes, unsupported count.",

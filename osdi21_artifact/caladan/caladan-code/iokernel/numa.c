@@ -24,6 +24,8 @@ struct numa_data {
 	struct list_node	congested_link;
 	bool			waking;
 
+	int app_priority;
+
 	/* thread usage limits */
 	int			threads_guaranteed;
 	int			threads_max;
@@ -38,7 +40,8 @@ static bool numa_proc_is_preemptible(struct numa_data *cursd,
 				struct numa_data *nextsd)
 {
 	return cursd->threads_active > cursd->threads_guaranteed &&
-	       nextsd->threads_active < nextsd->threads_guaranteed;
+	       (nextsd->threads_active < nextsd->threads_guaranteed || 
+		   	nextsd->app_priority > cursd->app_priority);
 }
 
 /* the current process running on each core */
@@ -99,6 +102,7 @@ static int numa_attach(struct proc *p, struct sched_spec *cfg)
 
 	memset(sd, 0, sizeof(*sd));
 	sd->p = p;
+	sd->app_priority = cfg->priority;
 	sd->threads_guaranteed = cfg->guaranteed_cores;
 	sd->threads_max = cfg->max_cores;
 	sd->threads_active = 0;

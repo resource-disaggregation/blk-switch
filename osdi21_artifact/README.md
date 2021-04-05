@@ -157,5 +157,12 @@ After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for
 - str: how many T-app requests are steered to other cores on that core.
 - prc: how many T-app requests came from other cores are processed on that core.
 
-### SPDK Evaluation
-Please refer to README in spdk/ folder
+### Other Systems
+In our paper, we also evaluate against two other systems, SPDK and Caladan, as baselines.
+Instructions to setup and run our evaluation experiments on these systems are available in the READMEs in spdk/ and caladan/ folders repsectively.
+
+#### SPDK
+Refer to [SPDK Evaluation README](spdk/README.md)
+
+#### Caladam
+Refer to [Caladan Evaluation README](caladan/README.md)

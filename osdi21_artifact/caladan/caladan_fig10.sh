@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Example usage: ./run_varyload.sh varyload-remoteram 192.168.10.115:5000 192.168.10.116:5000 60 $((32*1024)) 2
+# Example usage: ./run_varylatapps.sh varylatapps-remoteram 192.168.10.115:5000 192.168.10.116:5000 60 $((32*1024)) 2
 
-config="fig8"
+config="fig10"
 thru_target="192.168.10.115:5000"
 lat_target="192.168.10.116:5000"
 duration=60
@@ -16,10 +16,10 @@ num_use_cores=6
 echo "Starting warmup"
 ./run_apps.sh $config-warmup $thru_target $lat_target $duration $thru_sz $thru_qd 6 0 $num_use_cores;
 
-for qd in 1 2 4 8; do
+for num_lat in 1 2 4; do
 
-    echo "Starting $config-qd$qd";
-    ./run_apps.sh $config-qd$qd $thru_target $lat_target $duration $thru_sz $qd 6 6 $num_use_cores;
+    echo "Starting $config-lat$num_lat";
+    ./run_apps.sh $config-lat$num_lat $thru_target $lat_target $duration $thru_sz $thru_qd 6 $((6*$num_lat)) $num_use_cores;
     sleep 10;
 
 done
