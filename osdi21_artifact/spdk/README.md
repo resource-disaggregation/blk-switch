@@ -20,12 +20,21 @@ Network stack configuration
 
 The below commands configure the network stack to enable TSO/GRO, Jumbo frames, and aRFS
 (set iface to the interface name of the NIC to be used)
-[TODO: enable arfs script is specific to Mellanox NIC. Need to check for other NICs]
+
+**Note:** `enable_arfs.sh` enables aRFS on Mellanox ConnextX-5 NICs. For different NICs, you may need to follow a different procedure to enable aRFS (please refer to the NIC documentation). If the NIC does not support aRFS, you could skip this step and proceed, however, the results that you observe could be significantly different. (We have not experimented with setups where aRFS is disabled).
+
 ```
 source config.sh
 sudo ethtool -K $IFACE tso on gso on gro on
 sudo ifconfig $IFACE mtu 9000
 sudo ./enable_arfs.sh $IFACE
+```
+
+Upon running `ethtool`, you may see errors of the following form: `Cannot get device udp-fragmentation-offload settings: Operation not supported`. It is normal; you can ignore them.
+
+Reset CFS config to default (if you ran blk-switch experiments before, it would have changed)
+```
+echo 24000000 | sudo tee /proc/sys/kernel/sched_latency_ns
 ```
 
 Disable hyperthreading (if on)

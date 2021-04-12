@@ -28,6 +28,8 @@ cd caladan-code
 cd ..
 ```
 
+In case you run into issues during the above step, please refer to [Troubleshooting](troubleshooting.md)
+
 Build Caladan + storage server + apps
 ```
 cd caladan-code
@@ -51,6 +53,8 @@ sudo ./caladan-code/scripts/setup_machine.sh
 python gen_configs.py 24 1 0 10 1
 ```
 
+**Note:** Upon running `setup_machine.sh`, you may see errors of the following form: `rmmod: ERROR: Module ksched is not currently loaded` and `rm: cannot remove '/dev/ksched': No such file or directory`. These are errors benign. You can ignore them.
+
 ### Run storage servers on the target machine
 The following command needs to be run on the Target machine to start the storage servers (which will service storage IO requests made by application on the Host)
 ```
@@ -58,6 +62,8 @@ sudo ./run_servers.sh 6 6 ram
 ```
 
 It can take upto 30 seconds for the servers to start up fully. The script will print "Ready" when complete. You can also use a CPU monitoring tool like `htop` to see what is happening. Once the server start, you should see 100% utilization on several of the cores.
+
+**Note:** During startup, you may see some erro messages getting printed. These are usually benign and you don't need to worry about them. As long as the final startup message is outputted: `CPU 00| <5> main: core 0 running dataplane. [Ctrl+C to quit]`, you are good to go. For reference, here is a sample output of a successful run on our machines: [sample run output](sample_stdout.md) 
 
 ### Run experiments
 Below are the steps to run the evaluation section experiments in our paper.
@@ -130,3 +136,4 @@ Run experiment on Host machine & collect results
 sudo ./caladan_fig11.sh
 sudo ./collect_fig11.sh
 ```
+

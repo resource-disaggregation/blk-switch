@@ -9,7 +9,7 @@ Our hardware configurations used in the paper are:
 
 [**Caveats of our work**]
 - Our work has been evaluated with 100Gbps NICs and 4-socket multi-core CPUs. Performance degradation is expected if the above hardware configuration is not available.
-- **system_setup.sh** includes Mellanox NIC-specific configuration (e.g., enabling aRFS).
+- `system_setup.sh` includes Mellanox NIC-specific configuration (e.g., enabling aRFS).
 - As described in the paper, we mainly use 6 cores in NUMA0 and their core numbers, 0, 4, 8, 12, 16, 20, are used through the evaluation scripts. These numbers should be changed if the systems have different number of NUMA nodes:
    ```
    lscpu | grep 'CPU(s)'
@@ -28,82 +28,77 @@ Now we provide how to use our scripts to reproduce the results in the paper.
 - If you get an error while running the "Run configuration scripts", please reboot the both servers and restart from the "Run configuration scripts" section.
 
 ### Run configuration scripts (with root)
-You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts -- **target_null.sh**, **host_tcp_null.sh**, and **host_i10_null.sh**.
+You should be root from now on. If you already ran some configuration scripts below while doing the getting started instruction, you **SHOULD NOT** run those scripts -- `target_null.sh`, `host_tcp_null.sh`, and `host_i10_null.sh`.
 
 **(Don't forget to be root)**
 
-1. At Target:  
- Check if your Target has physical NVMe SSD devices. Type "nvme list" and see if there is "**/dev/nvme0n1**".  
- If your Target does not have "**/dev/nvme0n1**", we will skip "**target_ssd.sh**" and will configure only RAM device (null-blk) below.
+1. At Both Target and Host:  
+ Please edit `~/blk-switch/scripts/system_env.sh` to specify Target IP address, Network interface name associated with the Target IP address, and number of cores of your system. You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.   
+ Then run `system_setup.sh`:
+   ```
+   sudo -s
+   cd ~/blk-switch/scripts/
+   ./system_setup.sh
+    ```
+   **NOTE:** `system_setup.sh` enables aRFS on Mellanox ConnextX-5 NICs. For different NICs, you may need to follow a different procedure to enable aRFS (please refer to the NIC documentation). If the NIC does not support aRFS, the results that you observe could be significantly different. (We have not experimented with setups where aRFS is disabled).
+   
+   The below error messages from `system_setup.sh` is normal. Please ignore them.
+   ```
+   Cannot get device udp-fragmentation-offload settings: Operation not supported
+   Cannot get device udp-fragmentation-offload settings: Operation not supported
+   ```
+
+2. At Target:  
+ Check if your Target has physical NVMe SSD devices. Type "nvme list" and see if there is any device (e.g., `/dev/nvme0n1`).  
+ If your Target does not have any NVMe SSD devices, you should skip `target_ssd.sh` and configure only RAM device (null-blk) with `target_null.sh`.
 
    ```
    sudo -s
    cd ~/blk-switch/scripts/
-   (See NOTE below first)
-   ./system_setup.sh
    ./target_null.sh
    (Run below only when your system has NVMe SSD)
    ./target_ssd.sh
-   ```
-   **NOTE: please edit "system_env.sh" to specify Target IP address, interface name, and number of cores before running the following scripts.**
-   You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
-   
-   The below error messages from **system_setup.sh** is normal. Please ignore them.
-   ```
-   Cannot get device udp-fragmentation-offload settings: Operation not supported
-   Cannot get device udp-fragmentation-offload settings: Operation not supported
-   ```
-   
-   If you ran "**target_null.sh**" twice by mistake and got several errors like "Permission denied", please reboot the both servers and restart from "Run configuration scripts".
+   ```   
+   If you ran `target_null.sh` twice by mistake and got several errors like "Permission denied", please reboot the both servers and restart from "Run configuration scripts".
    
    
-2. At Host:  
- Also we will skip "**host_tcp_ssd.sh**" and "**host_i10_ssd.sh**" if your Target server does not have physical NVMe SSD devices.
+3. At Host:  
+ Also we will skip `host_tcp_ssd.sh` and `host_i10_ssd.sh` if your Target server does not have physical NVMe SSD devices.
  After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
    ```
    sudo -s
    cd ~/blk-switch/scripts/
-   (See NOTE below first)
-   ./system_setup.sh
    ./host_tcp_null.sh
    ./host_i10_null.sh
    (Run below only when your target has NVMe SSD)
    ./host_tcp_ssd.sh
    ./host_i10_ssd.sh
    ```
-   **NOTE: please edit "system_env.sh" to specify Target IP address, interface name, and number of cores before running the following scripts.**
-   You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.
 
 ### Linux and blk-switch Evaluation (with root)
 Now you will run evaluation scripts at Host server. We need to identify newly added remote devices to use the right one for each script.  
 
-If your Host server has no NVMe SSD, then your remote devices are:
-- **/dev/nvme0n1**: null-blk device for blk-switch
-- **/dev/nvme1n1**: null-blk device for Linux
-- **/dev/nvme2n1**: SSD device for blk-switch
-- **/dev/nvme3n1**: SSD device for Linux
+We assume your Host server now has 4 remote devices as follows:
+- `/dev/nvme0n1`: null-blk device for blk-switch
+- `/dev/nvme1n1`: null-blk device for Linux
+- `/dev/nvme2n1`: SSD device for blk-switch
+- `/dev/nvme3n1`: SSD device for Linux
 
-If your Host server has already one NVMe SSD (i.e., **/dev/nvme0n1**), then your remote devices are:
-- **/dev/nvme1n1**: null-blk device for blk-switch
-- **/dev/nvme2n1**: null-blk device for Linux
-- **/dev/nvme3n1**: SSD device for blk-switch
-- **/dev/nvme4n1**: SSD device for Linux
-
-In our scripts, we assume that there's no NVMe SSD at Host server. So the default configuration in our scripts is:  
+So the default configuration in our scripts is:  
 
 For Figures 7, 8, 9, 11 (null-blk scenario):
-- blk-switch: "**$nvme_dev = /dev/nvme0n1**"
-- Linux: "**$nvme_dev = /dev/nvme1n1**"
+- blk-switch: `$nvme_dev = /dev/nvme0n1`
+- Linux: `$nvme_dev = /dev/nvme1n1`
 
 For Figure 10 (SSD scenario):
 - blk-switch:
-   - "**$nvme_dev = /dev/nvme0n1**"
-   - "**$ssd_dev = /dev/nvme2n1**"
+   - `$nvme_dev = /dev/nvme0n1`
+   - `$ssd_dev = /dev/nvme2n1`
 - Linux:
-   - "**$nvme_dev = /dev/nvme1n1**"
-   - "**$ssd_dev = /dev/nvme3n1**"
+   - `$nvme_dev = /dev/nvme1n1`
+   - `$ssd_dev = /dev/nvme3n1`
 
-If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., your Host has an NVMe SSD), please EDIT the scripts below with right device names before running them.
+If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., `/dev/nvme1n1` for null-blk device for blk-switch), please EDIT all the scripts below with right device names before running them.
 
 1. Figure 7: Increasing L-app load (6 mins):
 
@@ -137,8 +132,9 @@ If this is your case, then you are safe to go. If this is not the case for your 
    ./blk-switch_fig10.pl
    ```
 
-5. Figure 11: Increasing read ratio (10 mins):
-  
+5. Figure 11: Increasing read ratio (10 mins):   
+   **NOTE:** The scripts below require to ssh Target server without password. Please refer to [this](http://www.linuxproblem.org/art_9.html).   
+   And also please edit `~/blk-switch/osdi21_artifact/blk-switch/read_ratio.pl` to modify `$target = "jaehyun\@128.84.155.115"`, so that it includes your account name and the Target IP address (i.e., 'account_name@target_ip_address').  
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
    ./linux_fig11.pl
@@ -162,7 +158,8 @@ In our paper, we also evaluate against two other systems, SPDK and Caladan, as b
 Instructions to setup and run our evaluation experiments on these systems are available in the READMEs in spdk/ and caladan/ folders repsectively.
 
 #### SPDK
-Refer to [SPDK Evaluation README](spdk/README.md)
+Refer to README in [spdk/](spdk/) directory.
 
-#### Caladam
-Refer to [Caladan Evaluation README](caladan/README.md)
+#### Caladan
+Refer to README in [caladan/](caladan/) directory.
+

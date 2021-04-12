@@ -120,14 +120,13 @@ We will compare two systems in the toy-experiment section, "blk-switch" and "Lin
 
 We now configure RAM null-blk device as a remote storage device at Target server. 
 
-**(Don't forget to be root)**
-
 ### Target configuration
 (In step 4, we provide a script that covers steps 1--3, so please go to step 4 if you want to skip steps 1--3)
 
 1. Create null-block devices (10GB):
 
    ```
+   sudo -s
    modprobe null-blk gb=10 bs=4096 irqmode=1 hw_queue_depth=1024 submit-queues=24
    ```
    Use the number of cores of your system for "submit-queues".
@@ -173,7 +172,7 @@ We now configure RAM null-blk device as a remote storage device at Target server
    ./target_null.sh
    ```
 
-   **NOTE: please edit "system_env.sh" to specify Target IP address, Network Interface name, and number of cores before running "target_null.sh".**  
+   **NOTE: please edit `~/blk-switch/scripts/system_env.sh` to specify Target IP address, Network Interface name associated with the Target IP address, and number of cores before running `target_null.sh`.**  
    You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.  
 
 
@@ -210,21 +209,35 @@ We now configure RAM null-blk device as a remote storage device at Target server
       (see NOTE below)
       ./host_tcp_null.sh
       ```
-      **NOTE: please edit "system_env.sh" to specify Target IP address, Network Interface name, and number of cores before using it.**  
+      **NOTE: please edit `~/blk-switch/scripts/system_env.sh` to specify Target IP address, Network Interface name associated with the Target IP address, and number of cores before running `host_tcp_null.sh`.**  
       You can type "lscpu | grep 'CPU(s)'" to get the number of cores of your system.  
 
-4. Check the remote storage device name you just created (e.g., /dev/nvme0n1):
+4. Check the remote storage device name you just created (e.g., `/dev/nvme0n1`):
 
    ```
    nvme list
    ```
 
 ## 4. Run Toy-experiments
-At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nvme0n1). 
 
-**(Don't forget to be root)**
+1. At Both Target and Host:  
+ Please make sure that you edited `system_env.sh` correctly during the host configuration.
+   ```
+   sudo -s
+   cd ~/blk-switch/scripts/
+   ./system_setup.sh
+    ```
+   **NOTE:** `system_setup.sh` enables aRFS on Mellanox ConnextX-5 NICs. For different NICs, you may need to follow a different procedure to enable aRFS (please refer to the NIC documentation). If the NIC does not support aRFS, the results that you observe could be significantly different. (We have not experimented with setups where aRFS is disabled).
+   
+   The below error messages from `system_setup.sh` is normal. Please ignore them.
+   ```
+   Cannot get device udp-fragmentation-offload settings: Operation not supported
+   Cannot get device udp-fragmentation-offload settings: Operation not supported
+   ```
 
-1. Install FIO
+At Host: we run FIO to test blk-switch using the remote null-blk device (`/dev/nvme0n1`). 
+
+2. Install FIO
 
    ```
    sudo -s
@@ -232,16 +245,16 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    ```
    Or refer to https://github.com/axboe/fio to install the latest version.
 
-2. Run one L-app and one T-app on a core:
+3. Run one L-app and one T-app on a core:
 
    ```
    cd ~/blk-switch/scripts/
    (see NOTE below)
    ./toy_example_blk-switch.sh
    ```
-   NOTE: Edit "**toy_example_blk-switch.sh**" if your remote null-blk device created above for blk-switch is not "**/dev/nvme0n1**".
+   NOTE: Edit `toy_example_blk-switch.sh` if your remote null-blk device created above for blk-switch is not `/dev/nvme0n1`.
   
-3. Compare with Linux (pure i10 without blk-switch):
+4. Compare with Linux (pure i10 without blk-switch):
 
    ```
    cd ~/blk-switch/scripts/
@@ -249,9 +262,9 @@ At Host, we run FIO to test blk-switch using the remote null-blk device (/dev/nv
    (see NOTE below)
    ./toy_example_linux.sh
    ```
-   NOTE: Check the remote storage device name newly added after executing "**host_i10_null.sh**". We assume it is "**/dev/nvme1n1**". Edit "**toy_example_linux.sh**" if not.
+   NOTE: Check the remote storage device name newly added after executing `host_i10_null.sh`. We assume it is `/dev/nvme1n1`. Edit `toy_example_linux.sh` if not.
   
-4. Validate results (see output files on the same directory):
+5. Validate results (see output files on the same directory):
 
    If system has multiple cores per socket,
       - L-app is isolated by blk-switch achieving lower latency than Linux. **Check the unit (us or ns)**.
