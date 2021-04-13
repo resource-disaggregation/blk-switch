@@ -55,6 +55,7 @@ python gen_configs.py 24 1 0 10 1
 
 **Note:** Upon running `setup_machine.sh`, you may see errors of the following form: `rmmod: ERROR: Module ksched is not currently loaded` and `rm: cannot remove '/dev/ksched': No such file or directory`. These are errors benign. You can ignore them.
 
+
 ### Run storage servers on the target machine
 The following command needs to be run on the Target machine to start the storage servers (which will service storage IO requests made by application on the Host)
 ```

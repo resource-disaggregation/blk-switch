@@ -1,6 +1,6 @@
 #!/bin/bash
 
-nvme_dev='/dev/nvme2n1';
+nvme_dev='/dev/nvme1n1';
 echo 0 > /sys/module/blk_mq/parameters/blk_switch_on
 
 # Run L-app
@@ -18,7 +18,6 @@ fio --filename=$nvme_dev \
 	--iodepth=1 \
 	--cpus_allowed=0 \
 	--numjobs=1 \
-	--prioclass=1 \
 	--group_reporting > output_linux_lapp &
 
 # Run T-app
@@ -36,7 +35,6 @@ fio --filename=$nvme_dev \
         --iodepth=32 \
         --cpus_allowed=0 \
         --numjobs=1 \
-        --prioclass=0 \
         --group_reporting > output_linux_tapp &
 
 sleep 10

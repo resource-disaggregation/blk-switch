@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 $argc = @ARGV;
-if ($argc < 4) {exit;}
+if ($argc < 6) {exit;}
 
 ####################################
 # Script parameters
@@ -11,13 +11,14 @@ $ssd_dev = $ARGV[1];
 $total_nr_cpus = 24;
 $nr_cpus = 6;
 $cpus = "0,4,8,12,16,20";
-$runtime = 7;
+$runtime = 60;
 $runtime_cpu = $runtime - 2;
 $runtime_total = $runtime + 5;
 $nr_lapps = $ARGV[4];
 $nr_tapps = 6;
 $tapp_bs = $ARGV[2];
 $tapp_qd = $ARGV[3];
+$prio_on = $ARGV[5];
 
 ##############################################
 # Script commands
@@ -35,8 +36,8 @@ $fio_lapps = "fio --filename=${ssd_dev} " .
 	"--cpus_allowed=${cpus} " .
 	"--numjobs=${nr_lapps} " .
 	"--bs=4k " .
-	"--iodepth=1 ". 
-	"--prioclass=1 " .
+	"--iodepth=1 " . 
+	"--prioclass=${prio_on} " .
 	"--group_reporting " .
 	"--output-format=terse " .
 	"--terse-version=3 " .

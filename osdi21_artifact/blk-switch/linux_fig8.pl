@@ -10,6 +10,7 @@
 ######################################
 $nvme_dev = "/dev/nvme1n1";
 $tapp_bs = "64k";
+$prio_on = 0;
 
 ######################################
 # script variables
@@ -25,7 +26,7 @@ for($i=0; $i<$n_input; $i++)
 {
         for($j=0; $j<$repeat; $j++)
         {
-                system("./load_tapp.pl $nvme_dev $tapp_bs $tapp_qd[$i]");
+                system("./load_tapp.pl $nvme_dev $tapp_bs $tapp_qd[$i] $prio_on");
         }
 }
 

@@ -48,8 +48,8 @@ mkdir /sys/kernel/config/nvmet/subsystems/i10_null
 cd /sys/kernel/config/nvmet/subsystems/i10_null
 
 echo 1 > attr_allow_any_host
-mkdir namespaces/10
-cd namespaces/10
+mkdir namespaces/20
+cd namespaces/20
 echo -n /dev/nullb0 > device_path
 echo 1 > enable
 

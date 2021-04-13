@@ -12,6 +12,7 @@ $nvme_dev = "/dev/nvme1n1";
 $ssd_dev = "/dev/nvme3n1";
 $tapp_bs = "64k";
 $tapp_qd = 32;
+$prio_on = 0;
 
 ######################################
 # script variables
@@ -27,7 +28,7 @@ for($i=0; $i<$n_input; $i++)
 {
         for($j=0; $j<$repeat; $j++)
         {
-                system("./nr_lapp_ssd.pl $nvme_dev $ssd_dev $tapp_bs $tapp_qd $nr_lapps[$i]");
+                system("./nr_lapp_ssd.pl $nvme_dev $ssd_dev $tapp_bs $tapp_qd $nr_lapps[$i] $prio_on");
         }
 }
 

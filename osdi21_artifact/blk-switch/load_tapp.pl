@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 $argc = @ARGV;
-if ($argc < 3) {exit;}
+if ($argc < 4) {exit;}
 
 ####################################
 # Script parameters
@@ -17,6 +17,7 @@ $nr_lapps = 6;
 $nr_tapps = 6;
 $tapp_bs = $ARGV[1];
 $tapp_qd = $ARGV[2];
+$prio_on = $ARGV[3];
 
 ##############################################
 # Script commands
@@ -35,7 +36,7 @@ $fio_lapps = "fio --filename=${nvme_dev} " .
 	"--numjobs=${nr_lapps} " .
 	"--bs=4k " .
 	"--iodepth=1 ". 
-	"--prioclass=1 " .
+	"--prioclass=${prio_on} " .
 	"--group_reporting " .
 	"--output-format=terse " .
 	"--terse-version=3 " .

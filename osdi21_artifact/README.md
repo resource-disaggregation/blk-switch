@@ -64,7 +64,8 @@ You should be root from now on. If you already ran some configuration scripts be
    
 3. At Host:  
  Also we will skip `host_tcp_ssd.sh` and `host_i10_ssd.sh` if your Target server does not have physical NVMe SSD devices.
- After running the scripts below, you will see that 2-4 remote storage devices are created (type "nvme list").
+ After running the scripts below, you will see that 2-4 remote storage devices are created (type `nvme list`).
+
    ```
    sudo -s
    cd ~/blk-switch/scripts/
@@ -78,27 +79,27 @@ You should be root from now on. If you already ran some configuration scripts be
 ### Linux and blk-switch Evaluation (with root)
 Now you will run evaluation scripts at Host server. We need to identify newly added remote devices to use the right one for each script.  
 
-We assume your Host server now has 4 remote devices as follows:
-- `/dev/nvme0n1`: null-blk device for blk-switch
-- `/dev/nvme1n1`: null-blk device for Linux
-- `/dev/nvme2n1`: SSD device for blk-switch
-- `/dev/nvme3n1`: SSD device for Linux
+We assume your Host server now has 4 remote devices that have different '*Namespace number*' as follows:
+- `/dev/nvme0n1`: null-blk device for blk-switch (*Namespace: 10*)
+- `/dev/nvme1n1`: null-blk device for Linux (*Namespace: 20*)
+- `/dev/nvme2n1`: SSD device for blk-switch (*Namespace: 30*)
+- `/dev/nvme3n1`: SSD device for Linux (*Namespace: 40*)
 
-So the default configuration in our scripts is:  
+Type `nvme list` and check if the device names are matching the Namespace above. If this is your case, then you are safe to go. The default configurations in our scripts are:  
 
 For Figures 7, 8, 9, 11 (null-blk scenario):
-- blk-switch: `$nvme_dev = /dev/nvme0n1`
-- Linux: `$nvme_dev = /dev/nvme1n1`
+- blk-switch: `$nvme_dev = /dev/nvme0n1` (*whose Namespace is 10*)
+- Linux: `$nvme_dev = /dev/nvme1n1` (*whose Namespace is 20*)
 
 For Figure 10 (SSD scenario):
 - blk-switch:
-   - `$nvme_dev = /dev/nvme0n1`
-   - `$ssd_dev = /dev/nvme2n1`
+   - `$nvme_dev = /dev/nvme0n1` (*whose Namespace is 10*)
+   - `$ssd_dev = /dev/nvme2n1` (*whose Namespace is 30*)
 - Linux:
-   - `$nvme_dev = /dev/nvme1n1`
-   - `$ssd_dev = /dev/nvme3n1`
+   - `$nvme_dev = /dev/nvme1n1` (*whose Namespace is 20*)
+   - `$ssd_dev = /dev/nvme3n1` (*whose Namespace is 40*)
 
-If this is your case, then you are safe to go. If this is not the case for your Host system (e.g., `/dev/nvme1n1` for null-blk device for blk-switch), please EDIT all the scripts below with right device names before running them.
+But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/nvme1n1`), please EDIT all the scripts below with right device names before running them.
 
 1. Figure 7: Increasing L-app load (6 mins):
 
@@ -133,8 +134,10 @@ If this is your case, then you are safe to go. If this is not the case for your 
    ```
 
 5. Figure 11: Increasing read ratio (10 mins):   
-   **NOTE:** The scripts below require to ssh Target server without password. Please refer to [this](http://www.linuxproblem.org/art_9.html).   
-   And also please edit `~/blk-switch/osdi21_artifact/blk-switch/read_ratio.pl` to modify `$target = "jaehyun\@128.84.155.115"`, so that it includes your account name and the Target IP address (i.e., 'account_name@target_ip_address').  
+
+   **NOTE:** The scripts below require to ssh Target server without password (for host-side root). Please refer to [this](http://www.linuxproblem.org/art_9.html).   
+   And also please edit `~/blk-switch/osdi21_artifact/blk-switch/read_ratio.pl` to modify `$target = "osdi21\@192.168.10.115"`, so that it includes your account name and the Target IP address (i.e., 'account_name@target_ip_address').  
+
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
    ./linux_fig11.pl
@@ -152,6 +155,9 @@ After all is done, type "dmesg" to see the kernel logs. The last 6 lines are for
 - gen: how many T-app requests are generated on that core.
 - str: how many T-app requests are steered to other cores on that core.
 - prc: how many T-app requests came from other cores are processed on that core.
+
+
+[Note] The log messages are not in the order of core number; please check the core number of each log message. Please ignore the result showing '0'.
 
 ### Other Systems
 In our paper, we also evaluate against two other systems, SPDK and Caladan, as baselines.

@@ -179,8 +179,8 @@ We now configure RAM null-blk device as a remote storage device at Target server
 ### Host configuration
 (Go to step 4 if you want to skip steps 2--3. You still need to run step 1.)
 
-1. Install NVMe utility (nvme-cli):
-
+1. Install NVMe utility (nvme-cli):   
+   (If `nvme list` command works, you can skip this step.)
    ```
    sudo -s
    cd ~
@@ -235,10 +235,12 @@ We now configure RAM null-blk device as a remote storage device at Target server
    Cannot get device udp-fragmentation-offload settings: Operation not supported
    ```
 
+
 At Host: we run FIO to test blk-switch using the remote null-blk device (`/dev/nvme0n1`). 
 
-2. Install FIO
 
+2. Install FIO   
+   (Type `fio -v'. If FIO is already installed, you can skip this step.)
    ```
    sudo -s
    apt-get install fio
@@ -267,11 +269,12 @@ At Host: we run FIO to test blk-switch using the remote null-blk device (`/dev/n
 5. Validate results (see output files on the same directory):
 
    If system has multiple cores per socket,
-      - L-app is isolated by blk-switch achieving lower latency than Linux. **Check the unit (us or ns)**.
+      - L-app is isolated by blk-switch achieving lower latency than Linux. Check the unit of 99.00th latency (us or ns) with the last `grep` command below.
          ```
          cd ~/blk-switch/scripts/
          grep 'clat (' output_linux_lapp output_blk-switch_lapp
          grep '99.00th' output_linux_lapp output_blk-switch_lapp
+         grep 'clat percentiles' output_linux_lapp output_blk-switch_lapp
          ```
       - While achieving low latency, blk-switch also achieves comparable throughput to Linux.
          ```

@@ -19,8 +19,8 @@ mkdir /sys/kernel/config/nvmet/subsystems/nvme_ssd
 cd /sys/kernel/config/nvmet/subsystems/nvme_ssd
 
 echo 1 > attr_allow_any_host
-mkdir namespaces/10
-cd namespaces/10
+mkdir namespaces/30
+cd namespaces/30
 echo -n /dev/nvme0n1 > device_path
 echo 1 > enable
 
@@ -43,8 +43,8 @@ mkdir /sys/kernel/config/nvmet/subsystems/i10_ssd
 cd /sys/kernel/config/nvmet/subsystems/i10_ssd
 
 echo 1 > attr_allow_any_host
-mkdir namespaces/10
-cd namespaces/10
+mkdir namespaces/40
+cd namespaces/40
 echo -n /dev/nvme0n1 > device_path
 echo 1 > enable
 

@@ -24,6 +24,7 @@ $repeat = 1;
 # Run
 system("echo 1 > /sys/module/blk_mq/parameters/blk_switch_debug");
 system("echo 0 > /sys/module/nvme_tcp/parameters/i10_thru_nice");
+system("echo 8 > /sys/module/blk_mq/parameters/blk_switch_thresh_B");
 
 for($i=0; $i<$n_input; $i++)
 {
