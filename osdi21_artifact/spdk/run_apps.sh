@@ -18,6 +18,7 @@ mapfile -t use_cores < config/use_cores.txt
 # use_cores=('0x1' '0x10' '0x100' '0x1000' '0x10000' '0x100000' '0x2' '0x20' '0x200' '0x2000' '0x20000' '0x200000' '0x4' '0x40' '0x400' '0x4000' '0x40000' '0x400000' '0x8' '0x80' '0x800' '0x8000' '0x80000' '0x800000')
 num_use_cores="${10}"
 read_p="${11}"
+nice_lat="${12}"
 
 buffer_duration=10
 
@@ -58,7 +59,12 @@ done
 
 # Lat-apps
 for ((i = 1 ; i <= $num_lat ; i++)); do
-    spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+    if [ -z "$nice_lat" ];
+    then
+        nice -n $nice_lat spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+    else
+        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+    fi
     pids+=($!);
     echo "Launched lat$i";
 done
