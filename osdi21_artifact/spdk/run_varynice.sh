@@ -5,17 +5,17 @@
 config="varynice"
 thru_target="$(cat config/ram_disk_addr.txt)"
 lat_target="$(cat config/ram_disk_addr.txt)"
-duration="$(cat config/duration.txt)"
+duration=20
 thru_sz="$(cat config/thru_sz.txt)"
 thru_qd="$(cat config/thru_qd.txt)"
 lat_sz=$((4*1024))
 lat_qd=1
 
 
-for lat_nice in 0 -1 -2 -3 -4 -5 -6 -7 -8 -9 -10 -11 -12 -13 -14 -15 -16 -17 -18 -19 -20; do
+for lat_nice in 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0 -1 -2 -3 -4 -5 -6 -7 -8 -9 -10 -11 -12 -13 -14 -15 -16 -17 -18 -19 -20; do
 
     echo "Starting $config-nice$lat_nice";
     ./run_apps.sh $config-nice$lat_nice "$thru_target" "$lat_target" $duration $thru_sz $thru_qd 1 1 0 1 100 $lat_nice;
-    sleep 5;
+    sleep 3;
 
 done
