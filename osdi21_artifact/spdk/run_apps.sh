@@ -61,9 +61,10 @@ done
 for ((i = 1 ; i <= $num_lat ; i++)); do
     if [ -z "$nice_lat" ];
     then
-        nice -n $nice_lat spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
-    else
         spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+        
+    else
+        nice -n $nice_lat spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
     fi
     pids+=($!);
     echo "Launched lat$i";
