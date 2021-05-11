@@ -11,7 +11,7 @@ num_cores=1;
 
 echo "L-apps average-latency tail-latency";
 for lat_nice in 0 -1 -2 -3 -4 -5 -6 -7 -8 -9 -10 -11 -12 -13 -14 -15 -16 -17 -18 -19 -20; do
-    paste <(echo $lat_nice <(cat $prefix-nice$lat_nice.lat*.txt | grep "Total        " | awk 'BEGIN{x=0;} {x += $5;} END{print x/NR;}') <(cat $prefix-nice$lat_nice.lat*.txt | grep "99.00000" | tr -d 'us' | awk 'BEGIN{x=0;} {x += $3;} END{print x/NR;}');
+    paste <(echo $lat_nice) <(cat $prefix-nice$lat_nice.lat*.txt | grep "Total        " | awk 'BEGIN{x=0;} {x += $5;} END{print x/NR;}') <(cat $prefix-nice$lat_nice.lat*.txt | grep "99.00000" | tr -d 'us' | awk 'BEGIN{x=0;} {x += $3;} END{print x/NR;}');
 done
 echo ""
 
@@ -20,5 +20,5 @@ echo "T-apps total-throughput throughput-per-core"
 for lat_nice in 0 -1 -2 -3 -4 -5 -6 -7 -8 -9 -10 -11 -12 -13 -14 -15 -16 -17 -18 -19 -20; do
     tapp_xput=$(cat $prefix-nice$lat_nice.thru*.txt | grep "Total        " | awk '{x += $3;} END {print x*128*1024*8/1e9;}');
     lapp_xput=$(cat $prefix-nice$lat_nice.lat*.txt | grep "Total        " | awk '{x += $3;} END {print x*4*1024*8/1e9;}');
-    paste <(echo $lat_nice <(awk -v txp=$tapp_xput -v lxp=$lapp_xput -v n=$num_cores 'BEGIN {print (txp), (txp)/n}');
+    paste <(echo $lat_nice) <(awk -v txp=$tapp_xput -v lxp=$lapp_xput -v n=$num_cores 'BEGIN {print (txp), (txp)/n}');
 done
