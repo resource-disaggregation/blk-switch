@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Example usage: ./run_apps.sh singlecore-remoteram 'trtype:TCP traddr:192.168.10.115 adrfam:IPv4 trsvcid:4420 subnqn:nqn.2020-07.com.midhul:null0' 'trtype:TCP traddr:192.168.10.115 adrfam:IPv4 trsvcid:4420 subnqn:nqn.2020-07.com.midhul:null0' 60 $((128*1024)) 8 1 1 0 1
+# Example usage: ./run_apps.sh singlecore-remoteram 'trtype:TCP traddr:192.168.10.115 adrfam:IPv4 trsvcid:4420 subnqn:nqn.2020-07.com.midhul:null0' 'trtype:TCP traddr:192.168.10.115 adrfam:IPv4 trsvcid:4420 subnqn:nqn.2020-07.com.midhul:null0' $duration $((128*1024)) 8 1 1 0 1
 
 config=$1
 thru_target="$2"
@@ -20,7 +20,7 @@ num_use_cores="${10}"
 read_p="${11}"
 nice_lat="${12}"
 
-buffer_duration=10
+buffer_duration=6
 
 function cleanup() {
     killall spdk/build/examples/perf > /dev/null 2>&1;
@@ -49,9 +49,9 @@ echo "Starting $outlabel";
 for ((i = 1 ; i <= $num_thru ; i++)); do
     if [ -z "$read_p" ]; 
     then 
-        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w randread -t 60 -L > results/$outlabel.thru$i.txt 2>&1 &
+        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w randread -t $duration -L > results/$outlabel.thru$i.txt 2>&1 &
     else 
-        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w rw -M $read_p -t 60 -L > results/$outlabel.thru$i.txt 2>&1 &
+        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w rw -M $read_p -t $duration -L > results/$outlabel.thru$i.txt 2>&1 &
     fi
     pids+=($!);
     echo "Launched thru$i";
@@ -61,10 +61,10 @@ done
 for ((i = 1 ; i <= $num_lat ; i++)); do
     if [ -z "$nice_lat" ];
     then
-        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+        spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t $duration -L > results/$outlabel.lat$i.txt 2>&1 &
         
     else
-        nice -n $nice_lat spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t 60 -L > results/$outlabel.lat$i.txt 2>&1 &
+        nice -n $nice_lat spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]}  -r "$lat_target" -q $lat_qd -o $lat_sz -w randread -t $duration -L > results/$outlabel.lat$i.txt 2>&1 &
     fi
     pids+=($!);
     echo "Launched lat$i";
