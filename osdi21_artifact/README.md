@@ -108,12 +108,13 @@ But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/
    ./linux_fig2.pl
    ```
 
-1-2. Figure 3 (Single-core Linux): Increasing T-app I/O size (5 mins):
+1-2. Figure 3a (Single-core Linux): Increasing T-app I/O size (5 mins):
 
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
    ./linux_fig3a.pl
    ```
+
 
 2. Figure 7: Increasing L-app load (6 mins):
 
