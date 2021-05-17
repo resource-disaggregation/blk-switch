@@ -80,7 +80,7 @@ sleep 2;
 
 if [ -n "$perf_record" ];
 then
-    sudo perf sched timehist | grep "\[0000\]" > ~/spdk-eval/$outlabel.sched.log;
+    sudo perf sched timehist | grep "\[0000\]" > results/$outlabel.sched.log;
 fi
 
 
