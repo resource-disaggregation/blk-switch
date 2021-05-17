@@ -114,8 +114,7 @@ But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/
    cd ~/blk-switch/osdi21_artifact/blk-switch/
    ./linux_fig3a.pl
    ```
-
-
+   
 2. Figure 7: Increasing L-app load (6 mins):
 
    ```
