@@ -101,7 +101,21 @@ For Figure 10 (SSD scenario):
 
 But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/nvme1n1`), please EDIT all the scripts below with right device names before running them.
 
-1. Figure 7: Increasing L-app load (6 mins):
+1-1. Figure 2 (Single-core Linux): Increasing L-app load (5 mins):
+
+   ```
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig2.pl
+   ```
+
+1-2. Figure 3 (Single-core Linux): Increasing T-app I/O size (5 mins):
+
+   ```
+   cd ~/blk-switch/osdi21_artifact/blk-switch/
+   ./linux_fig3a.pl
+   ```
+
+2. Figure 7: Increasing L-app load (6 mins):
 
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
@@ -109,7 +123,7 @@ But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/
    ./blk-switch_fig7.pl
    ```
 
-2. Figure 8: Increasing T-app load (12 mins):
+3. Figure 8: Increasing T-app load (12 mins):
 
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
@@ -117,7 +131,7 @@ But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/
    ./blk-switch_fig8.pl
    ```
 
-3. Figure 9: Varying number of cores (20 mins):
+4. Figure 9: Varying number of cores (20 mins):
 
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
@@ -125,7 +139,7 @@ But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/
    ./blk-switch_fig9.pl
    ```
 
-4. Figure 10: SSD results corresponding to Figure 7 (6 mins):
+5. Figure 10: SSD results corresponding to Figure 7 (6 mins):
 
    ```
    cd ~/blk-switch/osdi21_artifact/blk-switch/
@@ -133,7 +147,7 @@ But if this is not the case for your Host system (e.g., *Namespace 10* is `/dev/
    ./blk-switch_fig10.pl
    ```
 
-5. Figure 11: Increasing read ratio (10 mins):   
+6. Figure 11: Increasing read ratio (10 mins):   
 
    **NOTE:** The scripts below require to ssh Target server without password (for host-side root). Please refer to [this](http://www.linuxproblem.org/art_9.html).   
    And also please edit `~/blk-switch/osdi21_artifact/blk-switch/read_ratio.pl` to modify `$target = "osdi21\@192.168.10.115"`, so that it includes your account name and the Target IP address (i.e., 'account_name@target_ip_address').  
