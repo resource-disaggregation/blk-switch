@@ -104,3 +104,41 @@ Varying Read/Write ratio
 sudo ./spdk_fig11.sh
 sudo ./collect_fi1.sh
 ```
+
+Figure 2 experiments
+
+For Figure 2 experiments, first the following needs to be run on the Target machine:
+```
+sudo ./stop_target.sh
+sudo ./run_target.sh 0x1
+```
+
+Then the following needs to be run on host-side:
+```
+sudo ./spdk_fig2.sh
+sudo ./collect_fig2.sh
+```
+
+Fig 3b. experiment
+
+Note: For this experiment, `perf` needs to be installed on the system.
+
+First the following needs to be run on the Target machine:
+```
+sudo ./stop_target.sh
+sudo ./run_target.sh 0x1
+```
+
+Then the following needs to be run on the Host machine:
+```
+sudo ./spdk_fig3.sh
+```
+
+Once the experiment has run, run the following to obtain the timeslice statistics:
+```
+python timeslice.py results/fig3-lat1.sched.log
+python timeslice.py results/fig3-lat2.sched.log
+python timeslice.py results/fig3-lat4.sched.log
+```
+
+The above will print the "Run" times and "Wait" times per-process. The first process in each list is the T-app, while the rest are L-apps.
