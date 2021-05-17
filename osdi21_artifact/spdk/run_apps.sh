@@ -18,8 +18,11 @@ mapfile -t use_cores < config/use_cores.txt
 # use_cores=('0x1' '0x10' '0x100' '0x1000' '0x10000' '0x100000' '0x2' '0x20' '0x200' '0x2000' '0x20000' '0x200000' '0x4' '0x40' '0x400' '0x4000' '0x40000' '0x400000' '0x8' '0x80' '0x800' '0x8000' '0x80000' '0x800000')
 num_use_cores="${10}"
 read_p="${11}"
+perf_record="${12}"
 
 buffer_duration=10
+record_sleep=25
+record_duration=5
 
 function cleanup() {
     killall spdk/build/examples/perf > /dev/null 2>&1;
@@ -47,7 +50,8 @@ echo "Starting $outlabel";
 # Thru-apps
 for ((i = 1 ; i <= $num_thru ; i++)); do
     if [ -z "$read_p" ]; 
-    then 
+    then
+        echo "read-only";
         spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w randread -t 60 -L > results/$outlabel.thru$i.txt 2>&1 &
     else 
         spdk/build/examples/perf -c ${use_cores[$((($i-1)%$num_use_cores))]} -r "$thru_target" -q $thru_qd -o $thru_sz -w rw -M $read_p -t 60 -L > results/$outlabel.thru$i.txt 2>&1 &
@@ -63,10 +67,21 @@ for ((i = 1 ; i <= $num_lat ; i++)); do
     echo "Launched lat$i";
 done
 
+if [ -n "$perf_record" ];
+then
+    (sleep $record_sleep; sudo perf sched record -- sleep $record_duration) &
+fi
+
+
 # Wait for run to complete
 sleep $(($duration+$buffer_duration));
 cleanup;
 sleep 2;
+
+if [ -n "$perf_record" ];
+then
+    sudo perf sched timehist | grep "\[0000\]" > ~/spdk-eval/$outlabel.sched.log;
+fi
 
 
 
