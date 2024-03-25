@@ -860,6 +860,8 @@ req_steering:
 		msleep(3);
 		goto retry;
 	}
+	
+	rq = blk_mq_rq_ctx_init(data, blk_mq_tags_from_data(data), tag, alloc_time_ns);
 
 	/* blk-switch: for output-port stats */
 	if (data->hctx->blk_switch && bio && !req_steered) {
@@ -870,8 +872,7 @@ req_steering:
 	}
 	rq->steered = req_steered;
 
-	return blk_mq_rq_ctx_init(data, blk_mq_tags_from_data(data), tag,
-					alloc_time_ns);
+	return rq;
 }
 
 static struct request *blk_mq_rq_cache_fill(struct request_queue *q,
@@ -1414,23 +1415,6 @@ void blk_mq_end_request_batch(struct io_comp_batch *iob)
 	struct blk_mq_hw_ctx *cur_hctx = NULL;
 	struct request *rq;
 	u64 now = 0;
-	
-	// /* blk-switch: for output-port stats */
-	// if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) &&
-	//    !rq->steered && rq->tag && rq->bio) {
-	// 	if (blk_switch_is_thru_request(rq->bio)) {
-	// 		if (blk_switch_T_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
-	// 			blk_switch_T_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
-	// 		else
-	// 			blk_switch_T_bytes[rq->mq_ctx->cpu] = 0;
-	// 	}
-	// 	else {
-	// 		if (blk_switch_L_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
-	// 			blk_switch_L_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
-	// 		else
-	// 			blk_switch_L_bytes[rq->mq_ctx->cpu] = 0;
-	// 	}
-	// }
 
 	if (iob->need_ts)
 		now = ktime_get_ns();
@@ -1438,6 +1422,23 @@ void blk_mq_end_request_batch(struct io_comp_batch *iob)
 	while ((rq = rq_list_pop(&iob->req_list)) != NULL) {
 		prefetch(rq->bio);
 		prefetch(rq->rq_next);
+
+		/* blk-switch: for output-port stats */
+		if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) &&
+		!rq->steered && rq->tag && rq->bio) {
+			if (blk_switch_is_thru_request(rq->bio)) {
+				if (blk_switch_T_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
+					blk_switch_T_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
+				else
+					blk_switch_T_bytes[rq->mq_ctx->cpu] = 0;
+			}
+			else {
+				if (blk_switch_L_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
+					blk_switch_L_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
+				else
+					blk_switch_L_bytes[rq->mq_ctx->cpu] = 0;
+			}
+		}
 
 		blk_complete_request(rq);
 		if (iob->need_ts)

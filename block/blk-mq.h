@@ -95,12 +95,11 @@ static inline enum hctx_type blk_mq_get_hctx_type(blk_opf_t opf)
 	 */
 	if (opf & REQ_POLLED)
 		type = HCTX_TYPE_POLL;
-	else if ((opf & REQ_OP_MASK) == REQ_OP_READ)
-		type = HCTX_TYPE_READ;
-
-	/* blk-switch */ // Changelog: flags to opf
-	// else if (opf & REQ_PRIO && !(opf & REQ_FUA))
+	// else if ((opf & REQ_OP_MASK) == REQ_OP_READ)
 	// 	type = HCTX_TYPE_READ;
+	/* blk-switch */
+	else if (opf & REQ_PRIO && !(opf & REQ_FUA))
+		type = HCTX_TYPE_READ;
 	return type;
 }
 
