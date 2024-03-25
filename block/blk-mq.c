@@ -469,7 +469,7 @@ __blk_mq_alloc_requests_batch(struct blk_mq_alloc_data *data,
 	return rq_list_pop(data->cached_rq);
 }
 
-static struct request *__blk_mq_alloc_requests(struct blk_mq_alloc_data *data)
+static struct request *__blk_mq_alloc_requests(struct bio *bio, struct blk_mq_alloc_data *data)
 {
 	struct request_queue *q = data->q;
 	u64 alloc_time_ns = 0;
@@ -518,7 +518,7 @@ retry:
 	 * blk-switch: (1) reset variables, (2) print out statistics
 	 *		if there's no traffic for 1000ms
 	 */
-	if (blk_switch_request(data->bio, data)) {
+	if (blk_switch_request(bio, data)) {
 		if (blk_switch_reset_metrics == 0 ||
 		   time_after(jiffies, blk_switch_reset_metrics)) {
 			int i;
@@ -558,7 +558,7 @@ retry:
 	/*
 	 * blk-switch: Application Steering
 	 */
-	if (blk_switch_on >= 2 && blk_switch_request(data->bio, data)) {
+	if (blk_switch_on >= 2 && blk_switch_request(bio, data)) {
 		unsigned long L_core, T_core, min_metric;
 		unsigned long iter_L_core, iter_T_core;
 		int cur_cpu = data->ctx->cpu;
@@ -568,8 +568,8 @@ retry:
 		/* 1-1. Update T_core */
 		sample = blk_switch_T_bytes[cur_cpu];
 
-		if (blk_switch_is_thru_request(data->bio)) {
-			sample += data->bio->bi_iter.bi_size;
+		if (blk_switch_is_thru_request(bio)) {
+			sample += bio->bi_iter.bi_size;
 
 			if (blk_switch_T_metric[cur_cpu] == 0)
 				blk_switch_T_metric[cur_cpu] = sample;
@@ -586,8 +586,8 @@ retry:
 		/* 1-2. Update L_core */
 		sample = blk_switch_L_bytes[cur_cpu];
 
-		if (!blk_switch_is_thru_request(data->bio)) {
-			sample += data->bio->bi_iter.bi_size;
+		if (!blk_switch_is_thru_request(bio)) {
+			sample += bio->bi_iter.bi_size;
 
 			if (blk_switch_L_metric[cur_cpu] == 0)
 				blk_switch_L_metric[cur_cpu] = sample;
@@ -624,7 +624,7 @@ retry:
 			if (blk_switch_debug == 3)
 				printk("(pid %d cpu %d) -(%d)- %s [0](%lu %lu) [4](%lu %lu) [8](%lu %lu) [12](%lu %lu) [16](%lu %lu) [20](%lu %lu)",
 					current->pid, current->thread_info.cpu, blk_switch_appstr_app,
-					IOPRIO_PRIO_CLASS(bio_prio(data->bio)) == BLK_SWITCH_L_APP ? "L":"T",
+					IOPRIO_PRIO_CLASS(bio_prio(bio)) == BLK_SWITCH_L_APP ? "L":"T",
 					blk_switch_L_appstr[0], blk_switch_T_appstr[0],
 					blk_switch_L_appstr[4], blk_switch_T_appstr[4],
 					blk_switch_L_appstr[8], blk_switch_T_appstr[8],
@@ -636,7 +636,7 @@ retry:
 		L_core = blk_switch_L_appstr[cur_cpu];
 		T_core = blk_switch_T_appstr[cur_cpu];
 
-		if (!blk_switch_is_thru_request(data->bio))
+		if (!blk_switch_is_thru_request(bio))
 			min_metric = L_core + T_core;
 		else
 			min_metric = 8388608;
@@ -652,7 +652,7 @@ retry:
 
 			/* Find target_cpu for L-apps */
 			if (blk_switch_appstr_app == BLK_SWITCH_L_APP &&
-			   !blk_switch_is_thru_request(data->bio)) {
+			   !blk_switch_is_thru_request(bio)) {
 				if (T_core && iter_L_core &&
 				   (L_core + T_core) > (iter_L_core + iter_T_core) &&
 				   min_metric > (iter_L_core + iter_T_core)) {
@@ -662,7 +662,7 @@ retry:
 			}
 			/* Find target_cpu for T-apps */
 			else if (blk_switch_appstr_app == BLK_SWITCH_T_APP &&
-				blk_switch_is_thru_request(data->bio)) {
+				blk_switch_is_thru_request(bio)) {
 				// wait for L-app to move first
 				if (L_core < iter_L_core &&
 				   iter_L_core < BLK_SWITCH_THRESH_L) {
@@ -685,17 +685,17 @@ retry:
 			if (blk_switch_debug) {
 				printk(KERN_ERR "(pid %d cpu %2d) %s app (%lu %lu) -> (%lu %lu) core %d",
 					current->pid, current->thread_info.cpu,
-					IOPRIO_PRIO_CLASS(bio_prio(data->bio)) == BLK_SWITCH_L_APP ? "L":"T",
+					IOPRIO_PRIO_CLASS(bio_prio(bio)) == BLK_SWITCH_L_APP ? "L":"T",
 					L_core, T_core,
 					blk_switch_L_appstr[target_cpu],
 					blk_switch_T_appstr[target_cpu],
 					target_cpu);
 			}
 
-			if (!blk_switch_is_thru_request(data->bio) &&
+			if (!blk_switch_is_thru_request(bio) &&
 				atomic_read(&data->hctx->tags->active_queues) <= 1)
 				blk_switch_L_metric[cur_cpu] = 0;
-			else if (blk_switch_is_thru_request(data->bio) &&
+			else if (blk_switch_is_thru_request(bio) &&
 				atomic_read(&data->hctx->tags->active_queues) <= 1)
 				blk_switch_T_metric[cur_cpu] = 0;
 
@@ -715,8 +715,8 @@ retry:
 	/*
 	 * blk-switch: Request Steering for T-apps
 	 */
-	if (blk_switch_on >= 1 && blk_switch_request(data->bio, data) && 
-	   blk_switch_is_thru_request(data->bio) &&
+	if (blk_switch_on >= 1 && blk_switch_request(bio, data) && 
+	   blk_switch_is_thru_request(bio) &&
 	   !app_steered && nr_cpus >= nr_nodes * 2) {
 		struct blk_mq_hw_ctx *iter_hctx;
 		struct nvme_tcp_queue *driver_queue;
@@ -862,11 +862,11 @@ req_steering:
 	}
 
 	/* blk-switch: for output-port stats */
-	if (data->hctx->blk_switch && data->bio && !req_steered) {
-	    if (blk_switch_is_thru_request(data->bio))
-	        blk_switch_T_bytes[data->ctx->cpu] += data->bio->bi_iter.bi_size;
+	if (data->hctx->blk_switch && bio && !req_steered) {
+	    if (blk_switch_is_thru_request(bio))
+	        blk_switch_T_bytes[data->ctx->cpu] += bio->bi_iter.bi_size;
 	    else
-	        blk_switch_L_bytes[data->ctx->cpu] += data->bio->bi_iter.bi_size;
+	        blk_switch_L_bytes[data->ctx->cpu] += bio->bi_iter.bi_size;
 	}
 	rq->steered = req_steered;
 
@@ -893,7 +893,7 @@ static struct request *blk_mq_rq_cache_fill(struct request_queue *q,
 
 	plug->nr_ios = 1;
 
-	rq = __blk_mq_alloc_requests(&data);
+	rq = __blk_mq_alloc_requests(NULL, &data);
 	if (unlikely(!rq))
 		blk_queue_exit(q);
 	return rq;
@@ -952,7 +952,7 @@ struct request *blk_mq_alloc_request(struct request_queue *q, blk_opf_t opf,
 		if (ret)
 			return ERR_PTR(ret);
 
-		rq = __blk_mq_alloc_requests(&data);
+		rq = __blk_mq_alloc_requests(NULL, &data);
 		if (!rq)
 			goto out_queue_exit;
 	}
@@ -1415,22 +1415,22 @@ void blk_mq_end_request_batch(struct io_comp_batch *iob)
 	struct request *rq;
 	u64 now = 0;
 	
-	/* blk-switch: for output-port stats */
-	if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) &&
-	   !rq->steered && rq->tag && rq->bio) {
-		if (blk_switch_is_thru_request(rq->bio)) {
-			if (blk_switch_T_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
-				blk_switch_T_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
-			else
-				blk_switch_T_bytes[rq->mq_ctx->cpu] = 0;
-		}
-		else {
-			if (blk_switch_L_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
-				blk_switch_L_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
-			else
-				blk_switch_L_bytes[rq->mq_ctx->cpu] = 0;
-		}
-	}
+	// /* blk-switch: for output-port stats */
+	// if (rq->mq_hctx->blk_switch && blk_rq_bytes(rq) &&
+	//    !rq->steered && rq->tag && rq->bio) {
+	// 	if (blk_switch_is_thru_request(rq->bio)) {
+	// 		if (blk_switch_T_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
+	// 			blk_switch_T_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
+	// 		else
+	// 			blk_switch_T_bytes[rq->mq_ctx->cpu] = 0;
+	// 	}
+	// 	else {
+	// 		if (blk_switch_L_bytes[rq->mq_ctx->cpu] >= blk_rq_bytes(rq))
+	// 			blk_switch_L_bytes[rq->mq_ctx->cpu] -= blk_rq_bytes(rq);
+	// 		else
+	// 			blk_switch_L_bytes[rq->mq_ctx->cpu] = 0;
+	// 	}
+	// }
 
 	if (iob->need_ts)
 		now = ktime_get_ns();
@@ -3192,7 +3192,6 @@ static struct request *blk_mq_get_new_requests(struct request_queue *q,
 		.q		= q,
 		.nr_tags	= 1,
 		.cmd_flags	= bio->bi_opf,
-		.bio		= bio,
 	};
 	struct request *rq;
 
@@ -3210,7 +3209,7 @@ static struct request *blk_mq_get_new_requests(struct request_queue *q,
 		data.cached_rq = &plug->cached_rq;
 	}
 
-	rq = __blk_mq_alloc_requests(&data);
+	rq = __blk_mq_alloc_requests(bio, &data);
 	if (rq)
 		return rq;
 	rq_qos_cleanup(q, bio);
