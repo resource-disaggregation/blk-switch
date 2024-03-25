@@ -95,7 +95,12 @@ static inline enum hctx_type blk_mq_get_hctx_type(blk_opf_t opf)
 	 */
 	if (opf & REQ_POLLED)
 		type = HCTX_TYPE_POLL;
-	else if ((opf & REQ_OP_MASK) == REQ_OP_READ)
+	
+	// else if ((opf & REQ_OP_MASK) == REQ_OP_READ)
+	// 	type = HCTX_TYPE_READ;
+
+	/* blk-switch */ // Changelog: flags to opf
+	else if (opf & REQ_PRIO && !(opf & REQ_FUA))
 		type = HCTX_TYPE_READ;
 	return type;
 }
@@ -154,6 +159,9 @@ struct blk_mq_alloc_data {
 	unsigned int shallow_depth;
 	blk_opf_t cmd_flags;
 	req_flags_t rq_flags;
+
+	/* blk-switch */
+	struct bio *bio;
 
 	/* allocate multiple requests/tags in one go */
 	unsigned int nr_tags;

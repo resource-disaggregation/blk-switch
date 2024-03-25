@@ -92,6 +92,9 @@ struct request {
 	int tag;
 	int internal_tag;
 
+	/* blk-switch: 'y' if req is steered */
+	bool steered;
+
 	unsigned int timeout;
 
 	/* the following two fields are internal, NEVER access directly */
@@ -372,6 +375,9 @@ struct blk_mq_hw_ctx {
 	 * Average algorithm.
 	 */
 	unsigned int		dispatch_busy;
+
+	/* blk-switch */
+	bool			blk_switch;
 
 	/** @type: HCTX_TYPE_* flags. Type of hardware queue. */
 	unsigned short		type;
